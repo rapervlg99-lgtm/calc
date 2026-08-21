@@ -1,0 +1,37 @@
+{
+  "name": "01_ibeam_ozm_r60",
+  "request": {
+    "objectName": "Тест объект",
+    "address": "Москва",
+    "consent": true,
+    "frDurability": "2",
+    "groups": [
+      {
+        "title": "Группа 1",
+        "quantity": 1,
+        "elements": [
+          {
+            "title": "Балка 1",
+            "shape": "I-beam_",
+            "dims": { "h": 200, "b": 100, "s": 5.6, "t": 8.5, "R": 12 },
+            "frType": "1",
+            "htLevel": 60,
+            "sides": { "left": true, "top": true, "right": true, "bottom": true },
+            "lengthM": 6,
+            "quantity": 1,
+            "coat": "1",
+            "method": "1"
+          }
+        ]
+      }
+    ]
+  },
+  "expected": {
+    "elements": [
+      { "dpr": 3.7, "delta": 0 }
+    ],
+    "materialQty": {
+      "OZM": 0.176
+    }
+  }
+}

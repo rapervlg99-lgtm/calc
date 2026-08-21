@@ -1,0 +1,290 @@
+[
+  {
+    "baseDelta": 1.0,
+    "a": 16.0,
+    "b": 26.0,
+    "thickness": 20.0
+  },
+  {
+    "baseDelta": 1.0,
+    "a": 17.0,
+    "b": 39.0,
+    "thickness": 30.0
+  },
+  {
+    "baseDelta": 1.0,
+    "a": 18.0,
+    "b": 54.0,
+    "thickness": 40.0
+  },
+  {
+    "baseDelta": 1.0,
+    "a": 19.0,
+    "b": 66.0,
+    "thickness": 50.0
+  },
+  {
+    "baseDelta": 1.0,
+    "a": 18.0,
+    "b": 79.0,
+    "thickness": 60.0
+  },
+  {
+    "baseDelta": 1.0,
+    "a": 19.0,
+    "b": 90.0,
+    "thickness": 70.0
+  },
+  {
+    "baseDelta": 1.0,
+    "a": 20.0,
+    "b": 101.0,
+    "thickness": 80.0
+  },
+  {
+    "baseDelta": 1.0,
+    "a": 22.0,
+    "b": 116.0,
+    "thickness": 90.0
+  },
+  {
+    "baseDelta": 2.0,
+    "a": 16.43,
+    "b": 42.0,
+    "thickness": 20.0
+  },
+  {
+    "baseDelta": 2.0,
+    "a": 17.14,
+    "b": 56.0,
+    "thickness": 30.0
+  },
+  {
+    "baseDelta": 2.0,
+    "a": 17.86,
+    "b": 72.0,
+    "thickness": 40.0
+  },
+  {
+    "baseDelta": 2.0,
+    "a": 18.57,
+    "b": 85.0,
+    "thickness": 50.0
+  },
+  {
+    "baseDelta": 2.0,
+    "a": 17.86,
+    "b": 97.0,
+    "thickness": 60.0
+  },
+  {
+    "baseDelta": 2.0,
+    "a": 18.57,
+    "b": 109.0,
+    "thickness": 70.0
+  },
+  {
+    "baseDelta": 2.0,
+    "a": 20.0,
+    "b": 121.0,
+    "thickness": 80.0
+  },
+  {
+    "baseDelta": 2.0,
+    "a": 22.14,
+    "b": 138.0,
+    "thickness": 90.0
+  },
+  {
+    "baseDelta": 3.4,
+    "a": 16.55,
+    "b": 65.0,
+    "thickness": 20.0
+  },
+  {
+    "baseDelta": 3.4,
+    "a": 17.93,
+    "b": 80.0,
+    "thickness": 30.0
+  },
+  {
+    "baseDelta": 3.4,
+    "a": 19.31,
+    "b": 97.0,
+    "thickness": 40.0
+  },
+  {
+    "baseDelta": 3.4,
+    "a": 17.93,
+    "b": 111.0,
+    "thickness": 50.0
+  },
+  {
+    "baseDelta": 3.4,
+    "a": 18.62,
+    "b": 122.0,
+    "thickness": 60.0
+  },
+  {
+    "baseDelta": 3.4,
+    "a": 18.62,
+    "b": 135.0,
+    "thickness": 70.0
+  },
+  {
+    "baseDelta": 3.4,
+    "a": 20.0,
+    "b": 149.0,
+    "thickness": 80.0
+  },
+  {
+    "baseDelta": 3.4,
+    "a": 22.76,
+    "b": 169.0,
+    "thickness": 90.0
+  },
+  {
+    "baseDelta": 4.85,
+    "a": 18.25,
+    "b": 89.0,
+    "thickness": 20.0
+  },
+  {
+    "baseDelta": 4.85,
+    "a": 19.61,
+    "b": 106.0,
+    "thickness": 30.0
+  },
+  {
+    "baseDelta": 4.85,
+    "a": 20.0,
+    "b": 125.0,
+    "thickness": 40.0
+  },
+  {
+    "baseDelta": 4.85,
+    "a": 20.57,
+    "b": 137.0,
+    "thickness": 50.0
+  },
+  {
+    "baseDelta": 4.85,
+    "a": 20.57,
+    "b": 149.0,
+    "thickness": 60.0
+  },
+  {
+    "baseDelta": 4.85,
+    "a": 20.57,
+    "b": 162.0,
+    "thickness": 70.0
+  },
+  {
+    "baseDelta": 4.85,
+    "a": 23.84,
+    "b": 178.0,
+    "thickness": 80.0
+  },
+  {
+    "baseDelta": 4.85,
+    "a": 27.14,
+    "b": 202.0,
+    "thickness": 90.0
+  },
+  {
+    "baseDelta": 6.6,
+    "a": 18.25,
+    "b": 121.0,
+    "thickness": 20.0
+  },
+  {
+    "baseDelta": 6.6,
+    "a": 19.61,
+    "b": 140.0,
+    "thickness": 30.0
+  },
+  {
+    "baseDelta": 6.6,
+    "a": 20.0,
+    "b": 160.0,
+    "thickness": 40.0
+  },
+  {
+    "baseDelta": 6.6,
+    "a": 20.57,
+    "b": 173.0,
+    "thickness": 50.0
+  },
+  {
+    "baseDelta": 6.6,
+    "a": 20.57,
+    "b": 185.0,
+    "thickness": 60.0
+  },
+  {
+    "baseDelta": 6.6,
+    "a": 20.57,
+    "b": 198.0,
+    "thickness": 70.0
+  },
+  {
+    "baseDelta": 6.6,
+    "a": 23.84,
+    "b": 220.0,
+    "thickness": 80.0
+  },
+  {
+    "baseDelta": 6.6,
+    "a": 27.14,
+    "b": 249.0,
+    "thickness": 90.0
+  },
+  {
+    "baseDelta": 14.0,
+    "a": 18.25,
+    "b": 256.0,
+    "thickness": 20.0
+  },
+  {
+    "baseDelta": 14.0,
+    "a": 19.61,
+    "b": 284.0,
+    "thickness": 30.0
+  },
+  {
+    "baseDelta": 14.0,
+    "a": 20.0,
+    "b": 308.0,
+    "thickness": 40.0
+  },
+  {
+    "baseDelta": 14.0,
+    "a": 20.57,
+    "b": 325.0,
+    "thickness": 50.0
+  },
+  {
+    "baseDelta": 14.0,
+    "a": 20.57,
+    "b": 337.0,
+    "thickness": 60.0
+  },
+  {
+    "baseDelta": 14.0,
+    "a": 20.57,
+    "b": 350.0,
+    "thickness": 70.0
+  },
+  {
+    "baseDelta": 14.0,
+    "a": 23.84,
+    "b": 398.0,
+    "thickness": 80.0
+  },
+  {
+    "baseDelta": 14.0,
+    "a": 27.14,
+    "b": 448.0,
+    "thickness": 90.0
+  }
+]

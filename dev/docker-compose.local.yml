@@ -1,0 +1,82 @@
+services:
+  migrate:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: ozm-backend:local
+    entrypoint: ["/app/ozm-migrate"]
+    environment:
+      CALC_OZM_PG_ADDR: postgres:5432
+      CALC_OZM_PG_USER: ozm
+      CALC_OZM_PG_PASSWORD: ozm
+      CALC_OZM_PG_DATABASE: ozm
+      CALC_OZM_PG_TLS_MODE: disable
+      DICTS_BASELINE_DIR: /config/dicts
+    volumes:
+      - ./backend/dicts:/config/dicts:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  ozm-backend:
+    image: ozm-backend:local
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      CALC_OZM_PG_ADDR: postgres:5432
+      CALC_OZM_PG_USER: ozm
+      CALC_OZM_PG_PASSWORD: ozm
+      CALC_OZM_PG_DATABASE: ozm
+      CALC_OZM_PG_TLS_MODE: disable
+      CALC_OZM_APP_HTTP_ADDR: ":8080"
+      CALC_OZM_APP_ALLOWED_ORIGINS: "http://localhost:5173,http://127.0.0.1:5173"
+      CALC_OZM_APP_LOG_LEVEL: info
+      # OCR on for local (AUTH_DEV_MODE). Live PDF pipeline needs pdftoppm/LLM — Phase 3.
+      CALC_OZM_APP_OCR_ENABLED: "true"
+      CALC_OZM_APP_AUTH_DEV_MODE: "true"
+      CALC_OZM_APP_STORAGE_DIR: /tmp/ozm-blobs
+      CALC_OZM_APP_VISION_PROVIDER: ollama
+      CALC_OZM_APP_OLLAMA_URL: http://host.docker.internal:11434
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    tmpfs:
+      - /tmp
+    healthcheck:
+      test: ["CMD", "/app/ozm-server", "-healthcheck"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "127.0.0.1:5173:8080"
+    depends_on:
+      ozm-backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ozm
+      POSTGRES_PASSWORD: ozm
+      POSTGRES_DB: ozm
+    volumes:
+      - pgdata-local:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ozm -d ozm"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  pgdata-local: {}

@@ -1,0 +1,49 @@
+[
+  {
+    "id": "OZM",
+    "title": "ТЕХНО ОЗМ",
+    "unit": "м³",
+    "q": 1.25
+  },
+  {
+    "id": "OZB",
+    "title": "ТЕХНО ОЗБ",
+    "unit": "м³",
+    "q": 1.03
+  },
+  {
+    "id": "KCer",
+    "title": "Клей Ceresit CT 190",
+    "unit": "кг",
+    "rate": 1.2
+  },
+  {
+    "id": "KVer",
+    "title": "Штукатурка Ceresit",
+    "unit": "кг",
+    "rate": 3.2
+  },
+  {
+    "id": "KAnk",
+    "title": "Металлический анкер с шайбой",
+    "unit": "шт",
+    "rate": 7
+  },
+  {
+    "id": "T150p",
+    "title": "TAIKOR Primer 150",
+    "unit": "кг",
+    "rate": 0.23
+  },
+  {
+    "id": "Taikor",
+    "title": "TAIKOR FP",
+    "unit": "кг"
+  },
+  {
+    "id": "T425t",
+    "title": "TAIKOR Top 425",
+    "unit": "кг",
+    "rate": 0.17
+  }
+]

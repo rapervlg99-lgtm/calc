@@ -1,0 +1,22 @@
+# Junctions — не коммитить (локальные ссылки на ../backend, ../frontend)
+backend/
+frontend/
+
+# Env / local
+.env
+.env.*
+!.env.example
+
+# Claude / agent runtime
+.claude/
+tasks/
+progress.md
+docs/claude/
+tmp/
+
+# OS / editors
+.DS_Store
+.vscode/
+*.code-workspace
+*.log
+*.exe

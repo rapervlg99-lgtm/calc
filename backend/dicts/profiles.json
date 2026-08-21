@@ -1,0 +1,119 @@
+[
+  {
+    "id": "I-beam",
+    "label": "двутавр",
+    "hard": 0,
+    "shapes": [
+      {
+        "id": "I-beam_",
+        "label": "двутавр",
+        "picture": "I-beam_"
+      },
+      {
+        "id": "I-beam_sm",
+        "label": "двутавр простой",
+        "picture": "I-beam_sm"
+      },
+      {
+        "id": "I-beam_sl",
+        "label": "двутавр с уклоном полок",
+        "picture": "I-beam_sl"
+      }
+    ]
+  },
+  {
+    "id": "channel",
+    "label": "швеллер",
+    "hard": 0,
+    "shapes": [
+      {
+        "id": "channel_",
+        "label": "швеллер",
+        "picture": "channel_"
+      },
+      {
+        "id": "channel_sl",
+        "label": "швеллер с уклоном полок",
+        "picture": "channel_sl"
+      }
+    ]
+  },
+  {
+    "id": "brands",
+    "label": "тавр",
+    "hard": 1,
+    "shapes": [
+      {
+        "id": "brands_",
+        "label": "тавр",
+        "picture": "brands_"
+      },
+      {
+        "id": "brands_sm",
+        "label": "тавр простой",
+        "picture": "brands_sm"
+      }
+    ]
+  },
+  {
+    "id": "corner",
+    "label": "уголок",
+    "hard": 1,
+    "shapes": [
+      {
+        "id": "corner_",
+        "label": "уголок",
+        "picture": "corner_"
+      },
+      {
+        "id": "corner_e",
+        "label": "уголок равнополочный",
+        "picture": "corner_e"
+      },
+      {
+        "id": "corner_ue",
+        "label": "уголок неравнополочный",
+        "picture": "corner_ue"
+      }
+    ]
+  },
+  {
+    "id": "profile",
+    "label": "профиль",
+    "hard": 2,
+    "shapes": [
+      {
+        "id": "profile_",
+        "label": "профиль",
+        "picture": "profile_"
+      },
+      {
+        "id": "profile_sm",
+        "label": "профиль простой",
+        "picture": "profile_sm"
+      }
+    ]
+  },
+  {
+    "id": "tube",
+    "label": "труба",
+    "hard": 2,
+    "shapes": [
+      {
+        "id": "tube_",
+        "label": "труба",
+        "picture": "tube_"
+      },
+      {
+        "id": "tube_sm",
+        "label": "труба круглая",
+        "picture": "tube_sm"
+      },
+      {
+        "id": "tube_sq",
+        "label": "труба квадратная",
+        "picture": "tube_sq"
+      }
+    ]
+  }
+]

@@ -1,0 +1,17 @@
+.DS_Store
+Thumbs.db
+*.log
+.env
+.env.*
+!.env.example
+node_modules/
+frontend/dist/
+backend/bin/
+backend/data/
+**/__pycache__/
+progress.md
+tasks/
+.idea/
+.vscode/
+*.exe
+dev/tmp/

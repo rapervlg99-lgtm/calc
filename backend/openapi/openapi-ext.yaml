@@ -1,0 +1,434 @@
+openapi: 3.0.3
+info:
+  title: ОГЗ — расчёт погонажа МК (внешний API)
+  description: >
+    Внешний контракт калькулятора автоматического расчёта погонажа
+    металлоконструкций и площади листовой стали для подготовки расчётов
+    огнезащиты (ОГЗ). Версия спеки строго 3.0 (корп-требование).
+  version: 0.1.0
+servers:
+  - url: /api/v1/ext
+security:
+  - bearerAuth: []
+paths:
+  /jobs:
+    post:
+      summary: Создать задание (загрузка PDF спецификации/чертежа)
+      operationId: createJob
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: PDF спецификации металла / чертёж металлокаркаса
+      responses:
+        "201":
+          description: Задание создано
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobRef"
+        "400":
+          description: Файл отсутствует или это не PDF
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "413":
+          description: Файл превышает допустимый размер
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /jobs/{id}:
+    get:
+      summary: Получить статус и результаты строк формы ОГЗ
+      operationId: getJob
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+      responses:
+        "200":
+          description: Задание
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /jobs/{id}/rows:
+    post:
+      summary: Добавить пустую профильную строку вручную
+      operationId: createRow
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+      responses:
+        "201":
+          description: Созданная строка
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OgzRow"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /jobs/{id}/rows/{rowId}:
+    patch:
+      summary: Правка строки формы ОГЗ (профиль, масса 1 м, классификация, статус, ручные атрибуты)
+      operationId: patchRow
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+        - name: rowId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OgzRowPatch"
+      responses:
+        "200":
+          description: Обновлённая строка
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OgzRow"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      summary: Удалить строку формы ОГЗ
+      operationId: deleteRow
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+        - name: rowId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "204":
+          description: Строка удалена
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /jobs/{id}/rows/{rowId}/copy:
+    post:
+      summary: Скопировать (дублировать) строку формы ОГЗ
+      operationId: copyRow
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+        - name: rowId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "201":
+          description: Созданная копия строки
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OgzRow"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /jobs/{id}/confirm:
+    post:
+      summary: Подтвердить (апрув) проверенную форму перед предзаполнением калькулятора
+      operationId: confirmJob
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+      responses:
+        "204":
+          description: Подтверждено
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /jobs/{id}/prefill:
+    get:
+      summary: Payload предзаполнения калькулятора огнезащиты (доступен после апрува; nav.tn.ru/calculators/fireproof/)
+      operationId: getPrefill
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+      responses:
+        "200":
+          description: Контракт предзаполнения
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PrefillPayload"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /profiles:
+    get:
+      summary: Список записей справочника профилей
+      operationId: listProfiles
+      responses:
+        "200":
+          description: Справочник
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProfileRef"
+    post:
+      summary: Ручной ввод массы профиля (сохраняется в локальном справочнике)
+      operationId: createProfile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProfileRefInput"
+      responses:
+        "201":
+          description: Запись создана
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProfileRef"
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    JobId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  responses:
+    Unauthorized:
+      description: Не авторизован
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: Не найдено
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+    JobRef:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
+    Job:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [pending, processing, ready, failed]
+        confirmed:
+          type: boolean
+          description: форма подтверждена (апрувнута) специалистом
+        confirmedAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        profileRows:
+          type: array
+          items:
+            $ref: "#/components/schemas/OgzRow"
+        sheetRows:
+          type: array
+          items:
+            $ref: "#/components/schemas/OgzRow"
+    RowStatus:
+      type: string
+      enum: ["Посчитано", "Не считается", "Требует проверки", "Нужен ввод массы", "Нет данных"]
+    OgzRow:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        profileMark:
+          type: string
+        profileRaw:
+          type: string
+        gostProfile:
+          type: string
+          description: ГОСТ/сортамент профиля из наименования (для поиска массы на 23met.ru)
+        steelGrade:
+          type: string
+          description: марка стали (С255/С345) — справочно
+        ppNumber:
+          type: string
+          description: номер позиции (п/п) — справочно
+        construction:
+          type: string
+          description: тип конструкции (столбец «Масса металла по элементам конструкций»)
+        mass:
+          type: number
+          description: масса этой конструкции
+        massUnit:
+          type: string
+          enum: [kg, t]
+        massPerMeter:
+          type: number
+          description: уд. масса — кг/м (профиль) или кг/м² (лист)
+        massSource:
+          type: string
+          enum: ["23met", manual, cache, formula]
+          description: formula — масса 1 м² листа по формуле 7.85×толщина
+        sourceUrl:
+          type: string
+          description: ссылка на карточку 23met для ручной сверки
+        isSheet:
+          type: boolean
+        lengthM:
+          type: number
+        areaM2:
+          type: number
+        classification:
+          type: string
+        status:
+          $ref: "#/components/schemas/RowStatus"
+        heatingSides:
+          type: string
+          description: стороны обогрева (ручной атрибут)
+        fireLimit:
+          type: string
+          description: предел огнестойкости (ручной атрибут)
+        bearingType:
+          type: string
+          description: несущая / самонесущая (ручной атрибут)
+        coatingType:
+          type: string
+          description: тип защитного покрытия (ручной атрибут)
+    OgzRowPatch:
+      type: object
+      properties:
+        profileMark:
+          type: string
+        massPerMeter:
+          type: number
+        lengthM:
+          type: number
+          description: ручной override погонажа (не пересчитывается из массы)
+        classification:
+          type: string
+        status:
+          $ref: "#/components/schemas/RowStatus"
+        heatingSides:
+          type: string
+        fireLimit:
+          type: string
+        bearingType:
+          type: string
+        coatingType:
+          type: string
+        construction:
+          type: string
+          description: тип конструкции (Балки, Ригели, Колонны/Стойки, …)
+        name:
+          type: string
+          description: наименование позиции
+    ProfileRef:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        mark:
+          type: string
+        massPerMeter:
+          type: number
+        source:
+          type: string
+          enum: ["23met", manual]
+    ProfileRefInput:
+      type: object
+      required: [mark, massPerMeter]
+      properties:
+        mark:
+          type: string
+        massPerMeter:
+          type: number
+    PrefillPayload:
+      type: object
+      description: >
+        Контракт предзаполнения калькулятора огнезащиты. Проектируется нами;
+        владельцы калькулятора реализуют приём на своей стороне.
+      properties:
+        version:
+          type: string
+        jobId:
+          type: string
+          format: uuid
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              profileMark:
+                type: string
+              construction:
+                type: string
+                description: тип конструкции из OCR (Балки, Ригели, …)
+              lengthM:
+                type: number
+              heatingSides:
+                type: string
+              fireLimit:
+                type: string
+              bearingType:
+                type: string
+              coatingType:
+                type: string
+        sheet:
+          type: object
+          properties:
+            areaM2:
+              type: number

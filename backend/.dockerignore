@@ -1,0 +1,3 @@
+.git
+*.exe
+**/testdata/dc/*.xml

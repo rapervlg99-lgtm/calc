@@ -1,0 +1,36 @@
+{
+  "name": "02_beton_ozb_r180",
+  "request": {
+    "objectName": "Бетон тест",
+    "address": "Казань",
+    "consent": true,
+    "frDurability": "2",
+    "groups": [
+      {
+        "title": "dummy",
+        "quantity": 1,
+        "elements": [
+          {
+            "title": "skip-check",
+            "shape": "I-beam_",
+            "dims": { "h": 100, "b": 55, "s": 4.1, "t": 5.7, "R": 7 },
+            "frType": "1",
+            "htLevel": 45,
+            "sides": { "left": true, "top": true, "right": true, "bottom": true },
+            "lengthM": 1,
+            "quantity": 1,
+            "coat": "1",
+            "method": "1"
+          }
+        ]
+      }
+    ],
+    "beton": { "areaM2": 10, "htLevel": 180 }
+  },
+  "expected": {
+    "elements": [],
+    "materialQty": {
+      "OZB": 0.515
+    }
+  }
+}

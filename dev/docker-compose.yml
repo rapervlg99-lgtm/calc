@@ -1,0 +1,89 @@
+# Prod-like stack (без TLS-сертификатов в репо).
+# Локально предпочтительнее docker-compose.local.yml.
+# Перед up: cp .env.example .env и задайте POSTGRES_PASSWORD / CALC_OZM_PG_PASSWORD.
+
+services:
+  migrate:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: ozm-backend
+    entrypoint: ["/app/ozm-migrate"]
+    environment:
+      CALC_OZM_PG_ADDR: ${CALC_OZM_PG_ADDR:-postgres:5432}
+      CALC_OZM_PG_USER: ${CALC_OZM_PG_USER:-${POSTGRES_USER:-ozm}}
+      CALC_OZM_PG_PASSWORD: ${CALC_OZM_PG_PASSWORD:-${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required — set it in .env (see .env.example)}}
+      CALC_OZM_PG_DATABASE: ${CALC_OZM_PG_DATABASE:-${POSTGRES_DB:-ozm}}
+      CALC_OZM_PG_TLS_MODE: ${CALC_OZM_PG_TLS_MODE:-disable}
+      DICTS_BASELINE_DIR: /config/dicts
+    volumes:
+      - ./backend/dicts:/config/dicts:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  ozm-backend:
+    image: ozm-backend
+    expose:
+      - "8080"
+    environment:
+      CALC_OZM_APP_ADMIN_TOKEN: ${CALC_OZM_APP_ADMIN_TOKEN:-}
+      CALC_OZM_APP_ALLOWED_ORIGINS: ${CALC_OZM_APP_ALLOWED_ORIGINS:-}
+      CALC_OZM_APP_LOG_LEVEL: ${CALC_OZM_APP_LOG_LEVEL:-info}
+      CALC_OZM_APP_ENABLE_METRICS: ${CALC_OZM_APP_ENABLE_METRICS:-false}
+      CALC_OZM_APP_ENABLE_API_DOCS: ${CALC_OZM_APP_ENABLE_API_DOCS:-false}
+      CALC_OZM_PG_ADDR: ${CALC_OZM_PG_ADDR:-postgres:5432}
+      CALC_OZM_PG_USER: ${CALC_OZM_PG_USER:-${POSTGRES_USER:-ozm}}
+      CALC_OZM_PG_PASSWORD: ${CALC_OZM_PG_PASSWORD:-${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required — set it in .env (see .env.example)}}
+      CALC_OZM_PG_DATABASE: ${CALC_OZM_PG_DATABASE:-${POSTGRES_DB:-ozm}}
+      CALC_OZM_PG_TLS_MODE: ${CALC_OZM_PG_TLS_MODE:-disable}
+      CALC_OZM_APP_OCR_ENABLED: ${CALC_OZM_APP_OCR_ENABLED:-false}
+      CALC_OZM_APP_AUTH_DEV_MODE: ${CALC_OZM_APP_AUTH_DEV_MODE:-false}
+      CALC_OZM_APP_STORAGE_DIR: ${CALC_OZM_APP_STORAGE_DIR:-/tmp/ozm-blobs}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    mem_limit: 1g
+    tmpfs:
+      - /tmp
+    healthcheck:
+      test: ["CMD", "/app/ozm-server", "-healthcheck"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-ozm}
+      POSTGRES_USER: ${POSTGRES_USER:-ozm}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required — set it in .env (see .env.example)}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+    mem_limit: 256m
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ozm} -d ${POSTGRES_DB:-ozm}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "${HOST_PORT:-5173}:8080"
+    restart: unless-stopped
+    mem_limit: 128m
+    depends_on:
+      ozm-backend:
+        condition: service_healthy
+
+volumes:
+  pgdata: {}

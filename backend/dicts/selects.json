@@ -1,0 +1,126 @@
+{
+  "fr_durability": [
+    {
+      "value": "1",
+      "label": "I"
+    },
+    {
+      "value": "2",
+      "label": "II"
+    },
+    {
+      "value": "3",
+      "label": "III"
+    },
+    {
+      "value": "4",
+      "label": "IV"
+    },
+    {
+      "value": "5",
+      "label": "V"
+    }
+  ],
+  "fr_type": [
+    {
+      "value": "1",
+      "label": "несущая конструкция"
+    },
+    {
+      "value": "0",
+      "label": "самонесущая конструкция"
+    }
+  ],
+  "ht_level": [
+    {
+      "value": "15",
+      "label": "R15"
+    },
+    {
+      "value": "30",
+      "label": "R30"
+    },
+    {
+      "value": "45",
+      "label": "R45"
+    },
+    {
+      "value": "60",
+      "label": "R60"
+    },
+    {
+      "value": "90",
+      "label": "R90"
+    },
+    {
+      "value": "120",
+      "label": "R120"
+    },
+    {
+      "value": "150",
+      "label": "R150"
+    },
+    {
+      "value": "180",
+      "label": "R180"
+    },
+    {
+      "value": "210",
+      "label": "R210"
+    },
+    {
+      "value": "240",
+      "label": "R240"
+    }
+  ],
+  "fr_coat": [
+    {
+      "value": "1",
+      "label": "ТЕХНО ОЗМ"
+    },
+    {
+      "value": "2",
+      "label": "TAIKOR FP Epoxy"
+    },
+    {
+      "value": "3",
+      "label": "TAIKOR FP Graphite"
+    },
+    {
+      "value": "4",
+      "label": "TAIKOR FP Extra + TAIKOR FP Graphite"
+    },
+    {
+      "value": "1.5",
+      "label": "АКЗ"
+    }
+  ],
+  "fr_method": [
+    {
+      "value": "1",
+      "label": "огнезащита по коробу"
+    },
+    {
+      "value": "0",
+      "label": "огнезащита по контуру"
+    }
+  ],
+  "fr_side": [
+    {
+      "value": "left",
+      "label": "левая"
+    },
+    {
+      "value": "top",
+      "label": "верх"
+    },
+    {
+      "value": "right",
+      "label": "правая"
+    },
+    {
+      "value": "bottom",
+      "label": "низ"
+    }
+  ]
+}
