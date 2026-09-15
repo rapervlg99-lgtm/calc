@@ -1,22 +1,14 @@
+# Общие для всех калькуляторов; специфичное — в .gitignore внутри папки калькулятора
 .DS_Store
 Thumbs.db
 *.log
+node_modules/
+**/__pycache__/
 .env
 .env.*
 !.env.example
-node_modules/
-frontend/dist/
-backend/bin/
-backend/data/
-**/__pycache__/
-progress.md
-tasks/
 .idea/
 .vscode/
-*.exe
-dev/tmp/
-
-# Настройки агентов и редакторов — локальные
 .claude/
 .cursor/
 **/.claude/

@@ -20,7 +20,7 @@ OCR, по желанию Caddy для HTTPS). Всё на одной машин�
    ```bash
    curl -fsSL https://get.docker.com | sh
    ```
-2. Скопировать репозиторий `ozm-new` на сервер (git clone или `scp -r`).
+2. Скопировать папку `ozm` репозитория `calc` на сервер (git clone или `scp -r`).
    Служебные папки `dev/backend`, `dev/frontend`, `dev/ocr` не нужны, compose
    ссылается на `../backend` и т.п.
 3. Положить чертёжные шрифты в `dev/deploy/fonts/` (с Windows-машины из

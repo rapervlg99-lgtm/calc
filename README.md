@@ -1,38 +1,17 @@
-# ozm-new — калькулятор огнезащиты + OCR таблиц ИД
+# calc — калькуляторы
 
-Монорепо по шаблону blind-area-calc:
+Общий репозиторий калькуляторов. Каждый калькулятор живёт в своей папке
+верхнего уровня со своим README, тестами и инструкцией по запуску.
 
-| Папка | Назначение |
-|-------|------------|
-| `backend/` | Go API (`ozm/backend`): calc + `/api/v1/ext` (OCR) |
-| `ocr/` | Python-сервис `ocrpdf`: распознавание таблиц ИД из PDF (страница и API под `/ocr/`) |
-| `frontend/` | Vue 3 SPA |
-| `dev/` | compose local/test/prod-like, smoke, junctions → backend/frontend |
-| `infra/` | stub stage/prod (Phase 5) |
-| `docs/` | продуктовые/API спеки |
+| Папка | Калькулятор | Стек |
+|-------|-------------|------|
+| [`ozm/`](ozm/README.md) | Огнезащита металлоконструкций (ОЗМ) + распознавание спецификаций из PDF (OCR) | Go, Vue 3, Python; Docker Compose |
 
-Slug: **ozm**. Env: **`CALC_OZM_*`**. Сервис: **`ozm-backend`**. DB: **`ozm`**.
+## Как добавить калькулятор
 
-Источники: calc ← `ozm-calc`, OCR ← `firefight/New project`, каркас ← `blind-area-calc`.
+1. Создать папку верхнего уровня с коротким латинским именем (`calc-flat`, `ozv`…).
+2. Положить внутрь `README.md` с назначением и командами запуска.
+3. Добавить строку в таблицу выше.
 
-## Быстрый старт
-
-```bash
-cd dev
-docker compose -f docker-compose.local.yml up --build
-```
-
-- UI: http://127.0.0.1:5173/
-- API: http://127.0.0.1:8080/healthz
-- Развёртывание на сервере с постоянной ссылкой и паролем: [docs/deploy.md](docs/deploy.md)
-- OCR (кнопка «Распознать таблицу ИД»): сервис `ocr` поднимается тем же compose (контейнер `ozm-ocr:local`, порт 8000) — см. [dev/README.md](dev/README.md#ocr-кнопка-распознать-таблицу-ид)
-
-Smoke (при поднятом backend):
-
-```powershell
-powershell -File ./scripts/smoke-backend.ps1
-```
-
-## Документация
-
-См. [dev/README.md](dev/README.md), [dev/CLAUDE.md](dev/CLAUDE.md), [docs/](docs/).
+Секреты (`.env`, пароли, лицензионные шрифты) в репозиторий не коммитить —
+см. `.gitignore` внутри каждого калькулятора.

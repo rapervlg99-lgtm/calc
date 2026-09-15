@@ -1,4 +1,4 @@
-# ozm-new — calc + OCR (стек отмостки)
+# ozm — calc + OCR (стек отмостки)
 
 Монорепо: `backend` (Go) + `frontend` (Vue 3) + `dev` (compose) + `infra` (stub) + `docs`.
 

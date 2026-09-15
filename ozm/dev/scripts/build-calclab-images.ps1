@@ -1,5 +1,5 @@
 ﻿# Сборка релиз-пакета ОЗМ для скрытой страницы https://calclab.pro/ozm/
-# (см. calclab.pro/deploy/OZM.ru.md). Запускать из корня ozm-new:
+# (см. calclab.pro/deploy/OZM.ru.md). Запускать из папки калькулятора (calc/ozm):
 #   powershell -File dev\scripts\build-calclab-images.ps1 [-OutDir D:\dev\ozm-release] [-BasePath /ozm/]
 #
 # Что делает:
