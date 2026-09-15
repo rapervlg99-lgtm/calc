@@ -20,7 +20,11 @@ export interface PrefillMapped {
   groups: PrefillMappedGroup[]
   /** True when at least one titled group came from the form table. */
   useGroups: boolean
-  betonAreaM2: number
+  /**
+   * Суммарная площадь листовой стали спецификации, м² — справочно. В расчёт
+   * не идёт: это фасонки и накладки, а не бетонные конструкции (ОЗБ).
+   */
+  sheetAreaM2: number
 }
 
 /** Same inclusion rules as backend prefill.Build for profile rows. */
@@ -98,6 +102,12 @@ export function markAliases(mark: string): string[] {
     set.add(`${m[1]}${m[2]}${m[3]}`)
     set.add(`${m[1]} ${m[2]}${m[3]}`.replace(/\s+/g, ''))
   }
+  // «140х90х8» в спецификации — это «140/90 x 8» в справочнике неравнополочных
+  // уголков и гнутых профилей; «63х63х5» — «63 x 5» равнополочного.
+  const trip = raw.match(/^(\d+(?:[.,]\d+)?)[XХ×*](\d+(?:[.,]\d+)?)[XХ×*](\d+(?:[.,]\d+)?)$/i)
+  if (trip) {
+    set.add(normalizeMark(trip[1] === trip[2] ? `${trip[1]}X${trip[3]}` : `${trip[1]}/${trip[2]}X${trip[3]}`))
+  }
   return [...set].filter(Boolean)
 }
 
@@ -162,13 +172,19 @@ export function matchRoll(profileMark: string, roll: RollMark[], index?: Map<str
     const hit = idx.get(a)
     if (hit) return hit
   }
-  // soft: alias contained in label or vice versa (short marks only)
+  // soft: alias contained in label or vice versa (short marks only).
+  // Марки, начинающиеся с цифр, по подстроке не сравниваем: «130К1» содержит
+  // «30К1», «140х5» содержит «40х5» — это разные профили, а не варианты записи.
   const withLabel = roll.filter((r) => r.label || r.id)
   for (const a of aliases) {
     if (a.length < 2) continue
     const soft = withLabel.find((r) => {
       const lab = normalizeMark(r.label || r.id)
-      return lab === a || lab.includes(a) || a.includes(lab)
+      if (lab === a) return true
+      // алиасы вида «I40B1» — тот же номер с префиксом двутавра
+      const numLed = (m: string) => /^\d/.test(m.replace(/^I(?=\d)/, ''))
+      if (numLed(lab) && numLed(a)) return false
+      return lab.includes(a) || a.includes(lab)
     })
     if (soft) return soft
   }
@@ -180,14 +196,22 @@ export function mapPrefillItem(
   roll: RollMark[] = [],
   index?: Map<string, RollMark>
 ): MappedElement {
-  const hit = matchRoll(item.profileMark, roll, index)
+  // Подсказка о формах сечения сужает поиск: «140х5» без неё находит первую
+  // попавшуюся трубу (круглую), а строка спецификации была квадратной.
+  const shapes = item.shapes && item.shapes.length ? item.shapes : null
+  const pool = shapes ? roll.filter((r) => shapes.includes(r.shape)) : roll
+  const hit = matchRoll(item.profileMark, pool, shapes ? buildRollIndex(pool) : index)
   const coat = mapCoatingType(item.coatingType)
   const mark = item.profileMark || hit?.label || ''
   const construction = item.construction || ''
+  // Вид профиля — из наименования группы спецификации («Швеллеры стальные…» →
+  // швеллер), даже если марка не нашлась в справочнике проката: первая форма
+  // подсказки — базовая форма семейства.
+  const familyShape = shapes ? shapes[0] : undefined
   const element: ElementInput = {
     title: elementDisplayName(construction, mark),
     construction,
-    shape: hit?.shape || 'I-beam_',
+    shape: hit?.shape || familyShape || 'I-beam_',
     rollId: hit?.id || undefined,
     dims: hit?.dims ? { ...hit.dims } : { h: 100, b: 55, s: 4.1, t: 5.7, R: 7 },
     frType: mapBearingType(item.bearingType),
@@ -212,7 +236,7 @@ export function mapPrefillPayload(payload: PrefillPayload, roll: RollMark[] = []
   const index = buildRollIndex(roll)
   const items = payload.items || []
   const mapped = items.map((it) => mapPrefillItem(it, roll, index))
-  const betonAreaM2 = Number(payload.sheet?.areaM2) > 0 ? Number(payload.sheet.areaM2) : 0
+  const sheetAreaM2 = Number(payload.sheet?.areaM2) > 0 ? Number(payload.sheet.areaM2) : 0
 
   const tableGroups = (payload.groups || []).filter((g) => g.rowIds?.length)
   if (!tableGroups.length) {
@@ -220,7 +244,7 @@ export function mapPrefillPayload(payload: PrefillPayload, roll: RollMark[] = []
       elements: mapped,
       groups: [{ title: '', elements: mapped }],
       useGroups: false,
-      betonAreaM2
+      sheetAreaM2
     }
   }
 
@@ -257,7 +281,7 @@ export function mapPrefillPayload(payload: PrefillPayload, roll: RollMark[] = []
       elements: mapped,
       groups: [{ title: '', elements: mapped }],
       useGroups: false,
-      betonAreaM2
+      sheetAreaM2
     }
   }
 
@@ -265,6 +289,6 @@ export function mapPrefillPayload(payload: PrefillPayload, roll: RollMark[] = []
     elements: groups.flatMap((g) => g.elements),
     groups,
     useGroups: groups.some((g) => !!g.title),
-    betonAreaM2
+    sheetAreaM2
   }
 }

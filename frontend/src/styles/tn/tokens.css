@@ -1,0 +1,100 @@
+/* Base palette — verbatim from uikit/variables.css. 7 ramps × 21 steps (5…100). */
+:root{
+--neutral-white:#ffffff;--neutral-black:#000000;
+--neutral-5:#fcfcfd;--neutral-10:#f9f9fa;--neutral-15:#f3f5f7;--neutral-20:#e6e8ed;--neutral-25:#d7dae1;--neutral-30:#c8ccd6;--neutral-35:#bcc1ce;--neutral-40:#abb0c1;--neutral-45:#9ca3b6;--neutral-50:#8890a7;--neutral-55:#7a879d;--neutral-60:#667387;--neutral-65:#4e5867;--neutral-70:#444c59;--neutral-75:#3b434f;--neutral-80:#2d333c;--neutral-85:#292f37;--neutral-90:#262a32;--neutral-95:#22262d;--neutral-100:#1e2228;
+--red-5:#fef8f8;--red-10:#fdedee;--red-15:#fbdbdd;--red-20:#f9cccf;--red-25:#f8c1c5;--red-30:#f6aeb3;--red-35:#f49fa5;--red-40:#f28b92;--red-45:#f07a82;--red-50:#ed636c;--red-55:#eb4f56;--red-60:#e11b11;--red-65:#ae1603;--red-70:#961500;--red-75:#841500;--red-80:#670f00;--red-85:#5f0f00;--red-90:#570e00;--red-95:#4f0d00;--red-100:#470b00;
+--blue-5:#f5faff;--blue-10:#e6f2ff;--blue-15:#cde5ff;--blue-20:#b9dbff;--blue-25:#a9d3ff;--blue-30:#90c5ff;--blue-35:#7bbaff;--blue-40:#60acff;--blue-45:#49a1ff;--blue-50:#2b91ff;--blue-55:#1284ff;--blue-60:#006ee4;--blue-65:#0055af;--blue-70:#004998;--blue-75:#004186;--blue-80:#003267;--blue-85:#002e5f;--blue-90:#002a56;--blue-95:#00264e;--blue-100:#002246;
+--green-5:#f2fcf6;--green-10:#dff6e8;--green-15:#bfedcf;--green-20:#a4e6bb;--green-25:#90e0ac;--green-30:#6bd691;--green-35:#4ccd7a;--green-40:#21c15a;--green-45:#00b740;--green-50:#00a73b;--green-55:#009c37;--green-60:#00842f;--green-65:#006624;--green-70:#00581f;--green-75:#004d1b;--green-80:#003c15;--green-85:#003713;--green-90:#003212;--green-95:#002d10;--green-100:#00280e;
+--yellow-5:#fdfadf;--yellow-10:#fdf3ac;--yellow-15:#fce34c;--yellow-20:#f4d73e;--yellow-25:#edcd3b;--yellow-30:#e0be37;--yellow-35:#d7b334;--yellow-40:#c9a431;--yellow-45:#bf992e;--yellow-50:#b18b2b;--yellow-55:#918927;--yellow-60:#7b7421;--yellow-65:#5f5819;--yellow-70:#524c16;--yellow-75:#494313;--yellow-80:#38330f;--yellow-85:#332f0d;--yellow-90:#2f2a0c;--yellow-95:#2a260b;--yellow-100:#262209;
+--orange-5:#fff8f1;--orange-10:#ffeedc;--orange-15:#ffddb8;--orange-20:#ffcf9a;--orange-25:#ffc384;--orange-30:#ffb05c;--orange-35:#ffa03a;--orange-40:#ff8a0c;--orange-45:#f37e00;--orange-50:#df7400;--orange-55:#c27332;--orange-60:#a5622b;--orange-65:#7e4b21;--orange-70:#6d411c;--orange-75:#603919;--orange-80:#492b13;--orange-85:#432811;--orange-90:#3d2410;--orange-95:#37210e;--orange-100:#311d0d;
+--purple-5:#faf8fe;--purple-10:#f3effd;--purple-15:#e7defa;--purple-20:#ded1f9;--purple-25:#d6c7f7;--purple-30:#cbb7f5;--purple-35:#c1aaf3;--purple-40:#b59af1;--purple-45:#ac8def;--purple-50:#a07dec;--purple-55:#9474dc;--purple-60:#7e62ba;--purple-65:#604b8f;--purple-70:#53417b;--purple-75:#49396c;--purple-80:#382c53;--purple-85:#33284c;--purple-90:#2e2445;--purple-95:#2a213e;--purple-100:#251d37;
+--test:#d7e5f5;
+}
+/* Semantic aliases — verbatim from uikit/variables.css.
+   Naming: <role>-<layer>-<state>. Layer a = on light surface, b = inverted (on dark). */
+:root{
+--content-primary-a-enabled:var(--neutral-100);--content-primary-a-hover:var(--neutral-70);--content-primary-a-pressed:var(--neutral-100);--content-primary-a-disabled:var(--neutral-35);
+--content-primary-b-enabled:var(--neutral-white);--content-primary-b-hover:var(--neutral-white);--content-primary-b-pressed:var(--neutral-white);--content-primary-b-disabled:var(--neutral-35);
+--content-secondary-enabled:var(--neutral-60);--content-secondary-hover:var(--neutral-55);--content-secondary-pressed:var(--neutral-65);--content-secondary-disabled:var(--neutral-35);
+--content-tertiary-enabled:var(--neutral-45);--content-tertiary-hover:var(--neutral-40);--content-tertiary-pressed:var(--neutral-55);--content-tertiary-disabled:var(--neutral-35);
+--content-accent-enabled:var(--red-60);--content-accent-hover:var(--red-65);--content-accent-pressed:var(--red-70);--content-accent-disabled:var(--neutral-35);
+--content-system-positive:var(--green-55);--content-system-negative:var(--red-60);--content-system-warning:var(--orange-40);--content-system-neutral:var(--neutral-65);
+--content-action-enabled:var(--blue-55);--content-action-hover:var(--blue-60);--content-action-pressed:var(--blue-75);--content-action-disabled:var(--neutral-35);
+--background-primary-a-enabled:var(--neutral-white);--background-primary-a-hover:var(--neutral-5);--background-primary-a-pressed:var(--neutral-10);--background-primary-a-disabled:var(--neutral-10);
+--background-primary-b-enabled:var(--neutral-100);--background-primary-b-hover:var(--neutral-70);--background-primary-b-pressed:var(--neutral-black);--background-primary-b-disabled:var(--neutral-10);
+--background-secondary-a-enabled:var(--neutral-15);--background-secondary-a-hover:var(--neutral-20);--background-secondary-a-pressed:var(--neutral-25);--background-secondary-a-disabled:var(--neutral-10);
+--background-secondary-b-enabled:var(--neutral-65);--background-secondary-b-hover:var(--neutral-55);--background-secondary-b-pressed:var(--neutral-75);--background-secondary-b-disabled:var(--neutral-10);
+--background-secondary-enabled:var(--background-secondary-a-enabled);--background-secondary-hover:var(--background-secondary-a-hover);--background-secondary-pressed:var(--background-secondary-a-pressed);--background-secondary-disabled:var(--background-secondary-a-disabled);
+--background-tertiary-enabled:var(--neutral-20);--background-tertiary-hover:var(--neutral-25);--background-tertiary-pressed:var(--neutral-30);--background-tertiary-disabled:var(--neutral-10);
+--background-accent-enabled:var(--red-60);--background-accent-hover:var(--red-65);--background-accent-pressed:var(--red-70);--background-accent-disabled:var(--neutral-10);
+--border-primary-a-enabled:var(--neutral-100);--border-primary-a-hover:var(--neutral-70);--border-primary-a-pressed:var(--neutral-100);--border-primary-a-disabled:var(--neutral-20);
+--border-primary-b-enabled:var(--neutral-white);--border-primary-b-hover:var(--neutral-20);--border-primary-b-pressed:var(--neutral-25);--border-primary-b-disabled:var(--neutral-20);
+--border-primary-enabled:var(--border-primary-a-enabled);--border-primary-hover:var(--border-primary-a-hover);--border-primary-pressed:var(--border-primary-a-pressed);--border-primary-disabled:var(--border-primary-a-disabled);
+--border-secondary-enabled:var(--neutral-25);--border-secondary-hover:var(--neutral-30);--border-secondary-pressed:var(--neutral-35);--border-secondary-disabled:var(--neutral-20);
+--border-accent-enabled:var(--red-60);--border-accent-hover:var(--red-65);--border-accent-pressed:var(--red-70);--border-accent-disabled:var(--neutral-20);
+/* Illustration palette (uikit/illustration/illustration.vue) */
+--illustration-base:var(--neutral-25);--illustration-outline:var(--neutral-100);--illustration-suit:var(--neutral-20);--illustration-gloves:var(--neutral-45);--illustration-accent:var(--red-60);--illustration-star:var(--neutral-100);
+/* Empty-state layer palette (uikit/empty-content) */
+--base-layer:var(--neutral-20);--first-layer:var(--neutral-5);--second-layer:var(--neutral-10);--third-layer:var(--neutral-20);--fourth-layer:var(--neutral-25);
+}
+/* One family, five weights. Sizes are literal from the kit — no modular scale. */
+:root{
+--font-family-base:"Proxima Nova",sans-serif,system-ui;
+--font-weight-light:300;--font-weight-regular:400;--font-weight-semibold:600;--font-weight-bold:700;--font-weight-extrabold:800;
+
+/* size / line-height pairs observed in the kit */
+--text-display-size:32px;--text-display-line:44px;--text-display-weight:700;   /* TNUserPicture l initials */
+--text-title-1-size:24px;--text-title-1-line:32px;--text-title-1-weight:700;   /* TNPopup title */
+--text-title-2-size:20px;--text-title-2-line:28px;--text-title-2-weight:700;   /* bottom-sheet / empty-content title, xl button */
+--text-body-size:16px;--text-body-line:22px;--text-body-weight:400;            /* default body */
+--text-body-strong-weight:600;                                                  /* cell title, labels, tabs lg */
+--text-small-size:14px;--text-small-line:20px;--text-small-weight:400;          /* subtitle, tag, hints, tabs md */
+--text-caption-size:12px;--text-caption-line:16px;--text-caption-weight:600;    /* cell secondary text */
+--text-micro-size:10px;--text-micro-line:14px;--text-micro-weight:400;          /* tab-bar label, counters */
+
+/* semantic text roles */
+--text-heading:var(--content-primary-a-enabled);
+--text-body:var(--content-primary-a-enabled);
+--text-muted:var(--content-secondary-enabled);
+--text-faint:var(--content-tertiary-enabled);
+--text-link:var(--content-action-enabled);
+--text-accent:var(--content-accent-enabled);
+}
+/* Spacing is a 2/4-based ladder. TNCard exposes exactly this padding set. */
+:root{
+--space-2:2px;--space-4:4px;--space-6:6px;--space-8:8px;--space-10:10px;--space-12:12px;--space-16:16px;--space-24:24px;--space-32:32px;--space-40:40px;--space-44:44px;--space-64:64px;
+/* TNCard padding whitelist */
+--card-padding-set:0 4px 8px 12px 16px 24px 32px 40px;
+/* control heights */
+--control-height-sm:32px;--control-height-md:40px;--control-height-lg:48px;--control-height-xl:72px;
+/* icon sizes */
+--icon-16:16px;--icon-20:20px;--icon-24:24px;--icon-28:28px;--icon-32:32px;
+/* layout */
+--layout-sidebar-width:240px;--layout-page-padding:64px;--layout-page-padding-mobile:16px;--layout-mobile-breakpoint:769px;
+}
+/* Radii are container-size dependent: small controls 8, standard controls 12, surfaces 16. */
+:root{
+--radius-2:2px;--radius-4:4px;--radius-5:5px;--radius-6:6px;--radius-8:8px;--radius-10:10px;--radius-12:12px;--radius-14:14px;--radius-16:16px;
+--radius-pill:50px;--radius-circle:50%;
+--radius-control-sm:8px;   /* sm button, tag, tree row */
+--radius-control:12px;     /* button md+, input, select, textarea, tabs */
+--radius-surface:16px;     /* card, popup, bottom sheet, table, toast */
+--radius-checkbox:6px;
+}
+/* Two shadows only. Nothing else in the kit casts one. */
+:root{
+--shadow-small:-4px 6px 7px 0 #1e22282b,0 0 2px 0 #1e222830; /* popover, popup, bottom sheet, drag chip */
+--shadow-large:0 12px 46px 0 #00000019;                       /* detached table header, sticky footer, select panel */
+--overlay-scrim:#1e222899;
+}
+/* Fast, linear, unshowy. Colour changes are 0.1s linear; movement is 0.3s ease. */
+:root{
+--duration-instant:0.1s; /* @kind other */
+--duration-fast:0.2s; /* @kind other */
+--duration-base:0.3s; /* @kind other */
+--ease-linear:linear; /* @kind other */
+--ease-base:ease; /* @kind other */
+--transition-color:color var(--duration-instant) linear,background-color var(--duration-instant) linear,border-color var(--duration-instant) linear;
+--transition-fade:opacity var(--duration-fast) linear;
+--transition-move:transform var(--duration-base) ease;
+}

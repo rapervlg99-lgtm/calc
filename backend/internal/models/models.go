@@ -115,7 +115,7 @@ type GroupInput struct {
 
 type BetonInput struct {
 	AreaM2  float64 `json:"areaM2" validate:"gt=0"`
-	HtLevel float64 `json:"htLevel" validate:"oneof=180 240"`
+	HtLevel float64 `json:"htLevel" validate:"required,min=180,max=240"` // validator не умеет oneof для float64 (panic «Bad field type float64»)
 }
 
 type CalcRequest struct {

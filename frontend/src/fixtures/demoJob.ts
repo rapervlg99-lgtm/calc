@@ -1,4 +1,11 @@
 ﻿import type { Job, OgzRow, PrefillPayload } from "../types/ogz";
+import { profileCategory, SHAPES_BY_CATEGORY } from "../utils/ocrImport";
+
+/** Формы сечения, допустимые для строки, — по наименованию группы, ГОСТ и марке. */
+export function shapesForRow(r: OgzRow): string[] | undefined {
+  const cat = profileCategory(r.name, r.gostProfile, r.profileRaw || r.profileMark);
+  return cat ? SHAPES_BY_CATEGORY[cat] : undefined;
+}
 
 export const DEMO_JOB_ID = "demo";
 
@@ -128,7 +135,8 @@ export function demoPrefill(job: Job): PrefillPayload {
         heatingSides: r.heatingSides,
         fireLimit: r.fireLimit,
         bearingType: r.bearingType,
-        coatingType: r.coatingType
+        coatingType: r.coatingType,
+        shapes: shapesForRow(r)
       })),
     sheet: {
       areaM2: job.sheetRows.reduce((sum, r) => sum + r.areaM2, 0)

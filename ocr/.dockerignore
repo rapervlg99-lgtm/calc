@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.claude/
+.cursor/
+result/
+work/
+tests/
+README.md
+WORKLOG.md
+CLAUDE.md

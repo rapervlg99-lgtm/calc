@@ -3,13 +3,29 @@
     <div class="prt__groups">
       <div class="prt__groups-head">
         <span class="prt__groups-title">Группа элементов</span>
-        <button type="button" class="btn-ghost btn-sm" @click="addGroup">Создать группу</button>
+        <div class="prt__groups-actions">
+          <button
+            type="button"
+            class="btn-primary btn-sm"
+            :disabled="!canAutoGroup"
+            :title="canAutoGroup
+              ? 'Разложить позиции по группам с названиями из колонки «Элемент конструкции»'
+              : 'Ни у одной позиции не распознан элемент конструкции'"
+            @click="autoGroup"
+          >
+            Автоматическая группировка
+          </button>
+          <button type="button" class="btn-ghost btn-sm" @click="addGroup">Создать группу</button>
+        </div>
       </div>
       <p class="prt__groups-hint">
-        Перетащи строку в окно группы — позиция уйдёт из общего списка и
-        появится внутри группы; предел ОС и тип конструкции назначатся всем
-        элементам группы.
+        «Автоматическая группировка» раскладывает позиции по группам по колонке
+        «Элемент конструкции» («Балки», «Фермы», «Колонны/Стойки»…); позиции без
+        элемента остаются в общем перечне. Или перетащи строку в окно группы —
+        позиция уйдёт из общего списка и появится внутри группы; предел ОС и тип
+        конструкции назначатся всем элементам группы.
       </p>
+      <p v-if="autoNote" class="prt__groups-note" role="status">{{ autoNote }}</p>
       <div v-if="groups.length === 0" class="prt__groups-empty">
         Пока нет групп — создай и затяни в неё элементы.
       </div>
@@ -73,7 +89,8 @@
                   <th class="prt__check" aria-label="Выбор"></th>
                   <th class="prt__idx">№</th>
                   <th>Наименование</th>
-                  <th>Конструкция</th>
+                  <th>Наименование профиля</th>
+                  <th>Элемент конструкции</th>
                   <th>ГОСТ профиля</th>
                   <th class="prt__num">Уд. масса, кг/м</th>
                   <th class="prt__num">Длина, м</th>
@@ -90,7 +107,7 @@
                   v-for="(row, i) in win.rows"
                   :key="row.id"
                   :row="row"
-                  :index="i + 1"
+                  :index="rowNo(row.id)"
                   :selected="selectedIds.has(row.id)"
                   :length-value="lengthDraft[row.id] ?? formatLength(row.lengthM)"
                   @dragstart="onRowDragStart"
@@ -101,6 +118,7 @@
                   @fire-limit="onFireLimitChange"
                   @bearing="onBearingTypeChange"
                   @coating="onCoatingTypeChange"
+                  @pick-mark="onPickMark"
                   @edit="$emit('edit', $event)"
                   @copy="$emit('copy', $event)"
                   @remove="$emit('remove', $event)"
@@ -155,7 +173,8 @@
               <th class="prt__check" aria-label="Выбор"></th>
               <th class="prt__idx">№</th>
               <th>Наименование</th>
-              <th>Конструкция</th>
+              <th>Наименование профиля</th>
+              <th>Элемент конструкции</th>
               <th>ГОСТ профиля</th>
               <th class="prt__num">Уд. масса, кг/м</th>
               <th class="prt__num">Длина, м</th>
@@ -176,7 +195,7 @@
               v-for="(row, i) in ungroupedRows"
               :key="row.id"
               :row="row"
-              :index="i + 1"
+              :index="rowNo(row.id)"
               :selected="selectedIds.has(row.id)"
               :length-value="lengthDraft[row.id] ?? formatLength(row.lengthM)"
               @dragstart="onRowDragStart"
@@ -187,6 +206,7 @@
               @fire-limit="onFireLimitChange"
               @bearing="onBearingTypeChange"
               @coating="onCoatingTypeChange"
+              @pick-mark="onPickMark"
               @edit="$emit('edit', $event)"
               @copy="$emit('copy', $event)"
               @remove="$emit('remove', $event)"
@@ -206,7 +226,8 @@ import {
   isCoatingAvailableForFireLimit
 } from "@/utils/coatingTypes";
 import { fireLimitChoices } from "@/utils/fireLimits";
-import type { OgzRow, OgzRowPatch } from "@/types/ogz";
+import { autoGroupByConstruction, hasConstructions } from "@/utils/autoGroup";
+import type { OgzRow, OgzRowPatch, ProfileCandidate } from "@/types/ogz";
 
 export interface ElementGroup {
   id: string;
@@ -234,7 +255,10 @@ const bulkGroupId = ref("");
 const dragRowId = ref<number | null>(null);
 const dragOverId = ref<string | null>(null);
 const lengthDraft = reactive<Record<number, string>>({});
+const autoNote = ref("");
 let groupSeq = 1;
+
+const canAutoGroup = computed(() => hasConstructions(props.rows));
 
 const groupedIdSet = computed(() => {
   const ids = new Set<number>();
@@ -258,6 +282,15 @@ const ungroupedRows = computed(() =>
   props.rows.filter((r) => !groupedIdSet.value.has(r.id))
 );
 
+// «№» строки — порядковый номер в общем перечне погонажа, один и тот же в
+// группе и в общем списке: на него ссылается предупреждение «требуют проверки
+// — № 3, 6», и он не должен меняться от перетаскивания строки в группу.
+const rowNumbers = computed(() => new Map(props.rows.map((r, i) => [r.id, i + 1])));
+function rowNo(id: number): number {
+  return rowNumbers.value.get(id) ?? 0;
+}
+
+const lastLength = new Map<number, number>();   // lengthM строки при последнем обновлении черновика
 watch(
   () => props.rows,
   (rows) => {
@@ -269,8 +302,12 @@ watch(
       if (!ids.has(id)) selectedIds.value.delete(id);
     }
     for (const row of rows) {
-      if (lengthDraft[row.id] === undefined) {
+      // черновик длины обновляется, когда сама длина строки изменилась
+      // извне (выбор марки из вариантов, правка в редакторе) — иначе поле
+      // показывало старое значение, пока пользователь его не тронет
+      if (lengthDraft[row.id] === undefined || lastLength.get(row.id) !== row.lengthM) {
         lengthDraft[row.id] = formatLength(row.lengthM);
+        lastLength.set(row.id, row.lengthM);
       }
     }
   },
@@ -306,6 +343,40 @@ function addGroup(): void {
 function removeGroup(id: string): void {
   groups.value = groups.value.filter((g) => g.id !== id);
   if (bulkGroupId.value === id) bulkGroupId.value = "";
+}
+
+/**
+ * «Автоматическая группировка»: строки раскладываются по группам с названиями
+ * из колонки «Элемент конструкции» (Балки, Фермы, Колонны/Стойки…). Группа с
+ * таким названием переиспользуется вместе с её пределом ОС и типом конструкции,
+ * и они применяются к пришедшим строкам — как при ручном перетаскивании.
+ */
+function autoGroup(): void {
+  const res = autoGroupByConstruction(props.rows, groups.value, (name) => ({
+    id: `g-${groupSeq++}`,
+    name,
+    fireLimit: "",
+    bearingType: "",
+    rowIds: []
+  }));
+  groups.value = res.groups;
+  if (bulkGroupId.value && !res.groups.some((g) => g.id === bulkGroupId.value)) {
+    bulkGroupId.value = "";
+  }
+  for (const id of res.touched) applyGroupAttrs(id);
+  const groupsWithRows = res.groups.filter((g) => g.rowIds.length > 0).length;
+  const parts = [`Распределено ${res.grouped} ${plural(res.grouped, "позиция", "позиции", "позиций")} по ${groupsWithRows} ${plural(groupsWithRows, "группе", "группам", "группам")}`];
+  if (res.created) parts.push(`новых групп: ${res.created}`);
+  if (res.skipped) parts.push(`без элемента конструкции: ${res.skipped} — оставлены как есть`);
+  autoNote.value = parts.join("; ") + ".";
+}
+
+function plural(n: number, one: string, few: string, many: string): string {
+  const m10 = n % 10;
+  const m100 = n % 100;
+  if (m10 === 1 && m100 !== 11) return one;
+  if (m10 >= 2 && m10 <= 4 && (m100 < 10 || m100 >= 20)) return few;
+  return many;
 }
 
 function onRowDragStart(rowId: number, ev: DragEvent): void {
@@ -417,6 +488,21 @@ function onBearingTypeChange(row: OgzRow, value: string): void {
   emit("patch", row.id, { bearingType: value });
 }
 
+/**
+ * Выбор марки из вариантов OCR («2011» → 20Ш1): подставляем марку, а если она
+ * есть в справочнике — и массу 1 м (длина пересчитается из массы в patch),
+ * строка уходит на проверку. Список вариантов снимается.
+ */
+function onPickMark(row: OgzRow, cand: ProfileCandidate): void {
+  const patch: OgzRowPatch = { profileMark: cand.mark, profileCandidates: [] };
+  if (cand.massPerMeter > 0) {
+    patch.massPerMeter = cand.massPerMeter;
+    patch.massSource = cand.source;
+    patch.status = "Требует проверки";
+  }
+  emit("patch", row.id, patch);
+}
+
 function onCoatingTypeChange(row: OgzRow, value: string): void {
   if (value === row.coatingType) return;
   emit("patch", row.id, { coatingType: value });
@@ -471,9 +557,23 @@ defineExpose({ getGroupsForPrefill });
 
 .prt__groups-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+}
+
+.prt__groups-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.prt__groups-note {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--content-primary-a-enabled);
 }
 
 .prt__groups-title {

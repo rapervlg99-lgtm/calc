@@ -1,0 +1,59 @@
+# nginx фронтенда для сервера. Подставляется entrypoint-ом образа nginx через
+# envsubst (только переменная API_TOKEN, см. NGINX_ENVSUBST_FILTER в compose),
+# остальные $-переменные — родные nginx.
+#
+# Защита: у приложения пока нет собственной аутентификации (бэкенд в dev-режиме
+# принимает любой Bearer), поэтому вход закрыт паролем nginx, а /api/ принимает
+# только запросы с токеном, зашитым в бандл фронтенда при сборке (API_TOKEN).
+# Бандл отдаётся лишь после ввода пароля, так что токен видят только свои.
+server {
+  listen 8080;
+  server_name _;
+  root /usr/share/nginx/html;
+  index index.html;
+  client_max_body_size 100m;
+
+  resolver 127.0.0.11 valid=10s ipv6=off;
+  set $ozm_backend http://ozm-backend:8080;
+  set $ozm_ocr http://ocr:8000;
+
+  auth_basic "OZM calculator";  # латиница: кириллицу в realm браузеры показывают кашей
+  auth_basic_user_file /etc/nginx/.htpasswd;
+
+  gzip on;
+  gzip_types text/css application/javascript application/json image/svg+xml;
+
+  # API бэкенда: браузер шлёт «Authorization: Bearer <API_TOKEN>» (заголовок
+  # выставляет фронтенд), поэтому basic auth здесь выключен и проверяется токен.
+  location /api/ {
+    auth_basic off;
+    if ($http_authorization != "Bearer ${API_TOKEN}") {
+      return 401 '{"error":"unauthorized"}';
+    }
+    proxy_pass $ozm_backend;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_read_timeout 300s;
+  }
+
+  # OCR-сервис: страница и API под /ocr/, префикс сообщаем заголовком.
+  # Запросы страницы OCR идут без своего Authorization, браузер добавляет basic.
+  location /ocr/ {
+    rewrite ^/ocr/(.*)$ /$1 break;
+    proxy_pass $ozm_ocr;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Prefix /ocr;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_read_timeout 900s;
+    proxy_send_timeout 900s;
+  }
+  location = /ocr {
+    return 301 /ocr/;
+  }
+
+  location / {
+    try_files $uri $uri/ /index.html;
+  }
+}

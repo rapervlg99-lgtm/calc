@@ -244,6 +244,7 @@ func (e *Engine) resolveDims(el models.ElementInput) map[string]float64 {
 			}
 		}
 	}
+	normalizeDims(el.Shape, dims)
 	return dims
 }
 

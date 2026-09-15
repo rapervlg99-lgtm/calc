@@ -58,9 +58,40 @@ services:
       dockerfile: Dockerfile
     ports:
       - "127.0.0.1:5173:8080"
+    # nginx проксирует /ocr/ -> ocr:8000 (имя резолвится на каждом запросе,
+    # поэтому UI поднимается и без OCR — тогда /ocr/ отдаёт 502)
     depends_on:
       ozm-backend:
         condition: service_healthy
+    restart: unless-stopped
+
+  # Распознавание таблиц ИД (python, ../ocr). Порт 8000 наружу — для vite
+  # dev-сервера (proxy /ocr -> localhost:8000) и ручных проверок API.
+  ocr:
+    build:
+      context: ./ocr
+      dockerfile: Dockerfile
+    image: ozm-ocr:local
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      # чертёжные шрифты (ISOCPEUR, GOST type A/B, GOST Common) — шаблоны глифов
+      # для листов без текстового слоя; без них качество на таких листах падает.
+      # На другой ОС задайте OCR_FONTS_DIR в .env (каталог с *.ttf).
+      - "${OCR_FONTS_DIR:-C:/Windows/Fonts}:/usr/share/fonts/windows:ro"
+      # результаты заданий (живут 6 часов) переживают перезапуск контейнера
+      - ocr-jobs:/tmp/ocrpdf-jobs
+      # дисковый кэш шаблонов глифов (см. ocr/README.md, «Кэш шаблонов»)
+      - ocr-templates:/tmp/ocrpdf-templates
+    environment:
+      # пределы на одно задание (см. ocr/README.md, «Пределы на одно задание»)
+      OCRPDF_MAX_PAGES: ${OCRPDF_MAX_PAGES:-10}
+      OCRPDF_MAX_SEC_PER_PAGE: ${OCRPDF_MAX_SEC_PER_PAGE:-300}
+      OCRPDF_MIN_JOB_SEC: ${OCRPDF_MIN_JOB_SEC:-600}
+      # кэш шаблонов: объём в памяти, папка и предел на диске
+      OCRPDF_TEMPLATE_CACHE_MB: ${OCRPDF_TEMPLATE_CACHE_MB:-512}
+      OCRPDF_TEMPLATE_CACHE_DIR: /tmp/ocrpdf-templates
+      OCRPDF_TEMPLATE_DISK_MB: ${OCRPDF_TEMPLATE_DISK_MB:-512}
     restart: unless-stopped
 
   postgres:
@@ -80,3 +111,5 @@ services:
 
 volumes:
   pgdata-local: {}
+  ocr-jobs: {}
+  ocr-templates: {}

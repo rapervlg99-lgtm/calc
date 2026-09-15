@@ -1,35 +1,58 @@
+/*
+ * Глобальные токены приложения. Основа — дизайн-система TN Life (styles/tn/tokens.css):
+ * семь цветовых рамп, семантические алиасы, типографика, отступы, радиусы, тени.
+ * Здесь — только сброс и алиасы старых имён, которыми пользуются формы ОГЗ.
+ */
 :root {
-  --tn-red: #E30613;
-  --text: #262E3F;
-  --muted: #353E51;
-  --line: #BDBFC6;
-  --line-soft: #EDEDEE;
-  --soft: #F4F4F9;
-  --font: "Proxima Nova", "CeraPRO", Arial, Helvetica, sans-serif;
+  --tn-red: var(--red-60);
+  --text: var(--content-primary-a-enabled);
+  --muted: var(--content-secondary-enabled);
+  --line: var(--border-secondary-enabled);
+  --line-soft: var(--neutral-20);
+  --soft: var(--background-secondary-a-enabled);
+  --font: var(--font-family-base);
 
-  /* Aliases for ported OGZ form (firefight UIKit tokens) */
-  --content-primary-a-enabled: var(--text);
-  --content-secondary-enabled: var(--muted);
-  --content-accent-enabled: var(--tn-red);
-  --content-system-warning: #c47a00;
-  --content-system-positive: #1a7f37;
-  --content-system-negative: var(--tn-red);
-  --border-secondary-enabled: var(--line);
-  --background-primary-a-enabled: #fff;
-  --background-secondary-enabled: var(--soft);
-  --orange-10: #fff4e5;
-  --green-10: #e6f6ea;
-  --red-10: #fde8e9;
+  /* Алиасы фолбэков, которых нет в семантическом слое UIKit */
+  --background-secondary-enabled: var(--background-secondary-a-enabled);
+  --orange-10-bg: var(--orange-10);
 }
 
-* { box-sizing: border-box; margin: 0; padding: 0; outline: none; }
+*, *::before, *::after { box-sizing: border-box; }
 
-body, html {
-  font-family: var(--font);
-  color: var(--text);
-  background: #fff;
-  font-size: 16px;
+html, body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-family-base);
+  color: var(--content-primary-a-enabled);
+  background: var(--background-secondary-a-enabled);
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-line);
   -webkit-font-smoothing: antialiased;
 }
 
-button, input, select { font-family: inherit; color: inherit; }
+h1, h2, h3, h4, h5, h6, p { margin: 0; }
+ul { list-style: none; padding: 0; margin: 0; }
+
+button, input, select, textarea { font-family: inherit; color: inherit; }
+button { outline: none; }
+input, select, textarea { outline: none; }
+
+a { color: var(--content-action-enabled); text-decoration: none; transition: color var(--duration-instant) linear; }
+a:hover { color: var(--content-action-hover); }
+
+/* Нативный select в облике tn-select: убираем системную стрелку, свою рисуем из спрайта */
+select.tn-select__native {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 44px;
+  font-family: var(--font-family-base);
+}
+select.tn-select__native_placeholder { color: var(--content-secondary-enabled); }
+.tn-select__arrow-static { pointer-events: none; }
+
+/* Icon задаёт position inline-стилем? В Vue-порте нет, но на всякий случай фиксируем абсолют для иконки тега */
+.tn-tag > .tn-icon.tn-tag__icon { position: absolute; }
+
+/* Число без стрелок браузера */
+input[type='number'] { -moz-appearance: textfield; appearance: textfield; }
+input[type='number']::-webkit-inner-spin-button, input[type='number']::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }

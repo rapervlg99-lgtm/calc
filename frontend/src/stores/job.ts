@@ -8,6 +8,7 @@ import {
   DEMO_JOB_ID,
   getExtJob,
   getExtPrefill,
+  isLocalJob,
   patchExtRow,
   resetDemoJob
 } from '../utils/extApi'
@@ -22,20 +23,29 @@ export const useJobStore = defineStore('job', () => {
   const loading = ref(false)
   const error = ref('')
   const lastPrefill = ref<PrefillPayload | null>(null)
+  /** Замечания импорта из локального OCR — показываются один раз в форме. */
+  const importNotes = ref<string[]>([])
 
   const profileRows = computed(() => job.value?.profileRows ?? [])
   const sheetRows = computed(() => job.value?.sheetRows ?? [])
   const isConfirmed = computed(() => job.value?.confirmed ?? false)
 
-  const needsAttentionCount = computed(() => {
-    const rows = [...profileRows.value, ...sheetRows.value]
-    return rows.filter(
-      (r) =>
-        r.status === 'Требует проверки' ||
-        r.status === 'Нужен ввод массы' ||
-        r.status === 'Нет данных'
-    ).length
-  })
+  const needsAttention = (r: OgzRow) =>
+    r.status === 'Требует проверки' || r.status === 'Нужен ввод массы' || r.status === 'Нет данных'
+
+  const needsAttentionCount = computed(
+    () => [...profileRows.value, ...sheetRows.value].filter(needsAttention).length
+  )
+
+  /**
+   * Номера строк (как в колонке «№» таблиц — порядковый номер в перечне
+   * профильного погонажа и листовой стали), которые требуют проверки или ввода
+   * массы. Отдельно по вкладкам: предупреждение называет вкладку и номера.
+   */
+  const attentionRows = computed(() => ({
+    profile: profileRows.value.map((r, i) => (needsAttention(r) ? i + 1 : 0)).filter(Boolean),
+    sheet: sheetRows.value.map((r, i) => (needsAttention(r) ? i + 1 : 0)).filter(Boolean)
+  }))
 
   const missingFireLimitCount = computed(() =>
     profileRows.value.filter(
@@ -59,7 +69,9 @@ export const useJobStore = defineStore('job', () => {
     error.value = ''
     try {
       job.value = await getExtJob(id)
-      if (job.value && isEmptyJob(job.value)) {
+      // Пустое серверное задание подменяем демо; задание из локального OCR
+      // оставляем как есть — его пустота значима для пользователя.
+      if (job.value && isEmptyJob(job.value) && !isLocalJob(id)) {
         await fillWithDemo()
       }
     } catch (e: any) {
@@ -157,15 +169,27 @@ export const useJobStore = defineStore('job', () => {
     resetDemoJob()
   }
 
+  function setImportNotes(notes: string[]) {
+    importNotes.value = [...notes]
+  }
+
+  function takeImportNotes(): string[] {
+    const n = importNotes.value
+    importNotes.value = []
+    return n
+  }
+
   return {
     job,
     loading,
     error,
     lastPrefill,
+    importNotes,
     profileRows,
     sheetRows,
     isConfirmed,
     needsAttentionCount,
+    attentionRows,
     missingFireLimitCount,
     prefillableCount,
     load,
@@ -177,6 +201,8 @@ export const useJobStore = defineStore('job', () => {
     removeRow,
     confirm,
     fetchPrefill,
-    openDemo
+    openDemo,
+    setImportNotes,
+    takeImportNotes
   }
 })

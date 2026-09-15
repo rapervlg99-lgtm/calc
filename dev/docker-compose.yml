@@ -1,23 +1,24 @@
-# Prod-like stack (без TLS-сертификатов в репо).
-# Локально предпочтительнее docker-compose.local.yml.
-# Перед up: cp .env.example .env и задайте POSTGRES_PASSWORD / CALC_OZM_PG_PASSWORD.
+# Стек для сервера (одна машина с Docker). Локально предпочтительнее
+# docker-compose.local.yml. Перед up: cp deploy/env.prod.example .env, заполнить
+# POSTGRES_PASSWORD и API_TOKEN, создать deploy/htpasswd — см. docs/deploy.md.
+# Пути к исходникам — через ../ : на сервере junction-ов dev/backend и т.п. нет.
 
 services:
   migrate:
     build:
-      context: ./backend
+      context: ../backend
       dockerfile: Dockerfile
     image: ozm-backend
     entrypoint: ["/app/ozm-migrate"]
     environment:
       CALC_OZM_PG_ADDR: ${CALC_OZM_PG_ADDR:-postgres:5432}
       CALC_OZM_PG_USER: ${CALC_OZM_PG_USER:-${POSTGRES_USER:-ozm}}
-      CALC_OZM_PG_PASSWORD: ${CALC_OZM_PG_PASSWORD:-${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required — set it in .env (see .env.example)}}
+      CALC_OZM_PG_PASSWORD: ${CALC_OZM_PG_PASSWORD:-${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required — set it in .env (see deploy/env.prod.example)}}
       CALC_OZM_PG_DATABASE: ${CALC_OZM_PG_DATABASE:-${POSTGRES_DB:-ozm}}
       CALC_OZM_PG_TLS_MODE: ${CALC_OZM_PG_TLS_MODE:-disable}
       DICTS_BASELINE_DIR: /config/dicts
     volumes:
-      - ./backend/dicts:/config/dicts:ro
+      - ../backend/dicts:/config/dicts:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -35,11 +36,14 @@ services:
       CALC_OZM_APP_ENABLE_API_DOCS: ${CALC_OZM_APP_ENABLE_API_DOCS:-false}
       CALC_OZM_PG_ADDR: ${CALC_OZM_PG_ADDR:-postgres:5432}
       CALC_OZM_PG_USER: ${CALC_OZM_PG_USER:-${POSTGRES_USER:-ozm}}
-      CALC_OZM_PG_PASSWORD: ${CALC_OZM_PG_PASSWORD:-${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required — set it in .env (see .env.example)}}
+      CALC_OZM_PG_PASSWORD: ${CALC_OZM_PG_PASSWORD:-${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required — set it in .env (see deploy/env.prod.example)}}
       CALC_OZM_PG_DATABASE: ${CALC_OZM_PG_DATABASE:-${POSTGRES_DB:-ozm}}
       CALC_OZM_PG_TLS_MODE: ${CALC_OZM_PG_TLS_MODE:-disable}
-      CALC_OZM_APP_OCR_ENABLED: ${CALC_OZM_APP_OCR_ENABLED:-false}
-      CALC_OZM_APP_AUTH_DEV_MODE: ${CALC_OZM_APP_AUTH_DEV_MODE:-false}
+      # /api/v1/ext (импорт распознанных таблиц, справочник масс) нужен для OCR
+      CALC_OZM_APP_OCR_ENABLED: ${CALC_OZM_APP_OCR_ENABLED:-true}
+      # Собственной аутентификации пока нет (OIDC — TODO): бэкенд доступен только
+      # из сети compose, снаружи его закрывают пароль nginx и API_TOKEN.
+      CALC_OZM_APP_AUTH_DEV_MODE: ${CALC_OZM_APP_AUTH_DEV_MODE:-true}
       CALC_OZM_APP_STORAGE_DIR: ${CALC_OZM_APP_STORAGE_DIR:-/tmp/ozm-blobs}
     depends_on:
       postgres:
@@ -62,7 +66,7 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-ozm}
       POSTGRES_USER: ${POSTGRES_USER:-ozm}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required — set it in .env (see .env.example)}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required — set it in .env (see deploy/env.prod.example)}
     volumes:
       - pgdata:/var/lib/postgresql/data
     restart: unless-stopped
@@ -75,15 +79,75 @@ services:
 
   frontend:
     build:
-      context: ./frontend
+      context: ../frontend
       dockerfile: Dockerfile
+      args:
+        # токен зашивается в бандл; nginx пропускает в /api/ только его
+        VITE_AUTH_DEV_TOKEN: ${API_TOKEN:?API_TOKEN required — set it in .env (openssl rand -hex 24)}
     ports:
-      - "${HOST_PORT:-5173}:8080"
+      - "${HOST_PORT:-80}:8080"
+    environment:
+      API_TOKEN: ${API_TOKEN}
+      # entrypoint nginx подставляет в шаблон только эту переменную
+      NGINX_ENVSUBST_FILTER: ^API_TOKEN$$
+    volumes:
+      - ./deploy/nginx.prod.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ./deploy/htpasswd:/etc/nginx/.htpasswd:ro
     restart: unless-stopped
     mem_limit: 128m
     depends_on:
       ozm-backend:
         condition: service_healthy
 
+  # OCR таблиц ИД (страница и API под /ocr/ через nginx фронтенда).
+  # Шрифты для шаблонов глифов: *.ttf (ISOCPEUR, GOST) в каталоге OCR_FONTS_DIR;
+  # без них работают только Liberation/DejaVu и качество на чертёжных листах ниже.
+  ocr:
+    build:
+      context: ../ocr
+      dockerfile: Dockerfile
+    image: ozm-ocr
+    expose:
+      - "8000"
+    volumes:
+      - "${OCR_FONTS_DIR:-./deploy/fonts}:/usr/share/fonts/windows:ro"
+      - ocr-jobs:/tmp/ocrpdf-jobs
+      # дисковый кэш шаблонов глифов (см. ocr/README.md, «Кэш шаблонов»)
+      - ocr-templates:/tmp/ocrpdf-templates
+    environment:
+      # пределы на одно задание: страниц, секунд на страницу, минимум на задание
+      # (задания выполняются по одному, см. ocr/README.md «Пределы на одно задание»)
+      OCRPDF_MAX_PAGES: ${OCRPDF_MAX_PAGES:-10}
+      OCRPDF_MAX_SEC_PER_PAGE: ${OCRPDF_MAX_SEC_PER_PAGE:-300}
+      OCRPDF_MIN_JOB_SEC: ${OCRPDF_MIN_JOB_SEC:-600}
+      # кэш шаблонов: объём в памяти, папка и предел на диске
+      OCRPDF_TEMPLATE_CACHE_MB: ${OCRPDF_TEMPLATE_CACHE_MB:-512}
+      OCRPDF_TEMPLATE_CACHE_DIR: /tmp/ocrpdf-templates
+      OCRPDF_TEMPLATE_DISK_MB: ${OCRPDF_TEMPLATE_DISK_MB:-512}
+    restart: unless-stopped
+    mem_limit: 3g
+
+  # HTTPS (по желанию): docker compose --profile tls up -d. Нужен домен на сервер,
+  # в .env — PUBLIC_DOMAIN и HOST_PORT=127.0.0.1:8081, чтобы фронт не торчал наружу.
+  caddy:
+    image: caddy:2-alpine
+    profiles: ["tls"]
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      PUBLIC_DOMAIN: ${PUBLIC_DOMAIN:-localhost}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - frontend
+    restart: unless-stopped
+
 volumes:
   pgdata: {}
+  ocr-jobs: {}
+  ocr-templates: {}
+  caddy-data: {}
+  caddy-config: {}

@@ -14,8 +14,31 @@
       />
     </td>
     <td class="pdr__idx">{{ index }}</td>
-    <td>{{ row.profileMark || row.profileRaw || row.name || "—" }}</td>
-    <td>{{ constructionLabel }}</td>
+    <td>
+      <div>{{ row.profileMark || row.profileRaw || row.name || "—" }}</div>
+      <!-- OCR не разобрал букву серии двутавра («2011»): варианты по ГОСТ 26020,
+           с массой 1 м по справочнику там, где марка найдена. Клик подставляет
+           марку, массу и длину и снимает список. -->
+      <div v-if="row.profileCandidates?.length" class="pdr__cands" @mousedown.stop>
+        <span class="pdr__cands-label" title="OCR не разобрал букву серии — выберите марку">Варианты:</span>
+        <button
+          v-for="c in row.profileCandidates"
+          :key="c.mark"
+          type="button"
+          class="pdr__cand"
+          :class="{ pdr__cand_known: c.massPerMeter > 0 }"
+          :title="c.massPerMeter > 0
+            ? `${c.mark} — ${num(c.massPerMeter)} кг/м по справочнику`
+            : `${c.mark} — в справочнике не найдена, массу 1 м нужно ввести вручную`"
+          :aria-label="`Выбрать марку ${c.mark}`"
+          @click="$emit('pick-mark', row, c)"
+        >
+          {{ c.mark }}<span v-if="c.massPerMeter > 0" class="pdr__cand-m">{{ num(c.massPerMeter) }}</span>
+        </button>
+      </div>
+    </td>
+    <td :title="row.name || ''">{{ familyLabel }}</td>
+    <td class="pdr__construction" :title="row.construction || ''">{{ constructionLabel }}</td>
     <td>{{ row.gostProfile || "—" }}</td>
     <td class="pdr__num">
       {{ row.massPerMeter ? num(row.massPerMeter) : "—" }}
@@ -116,10 +139,11 @@ import HeatingSidesPicker from "./HeatingSidesPicker.vue";
 import StatusTag from "./StatusTag.vue";
 import { bearingTypeChoices } from "@/utils/bearingTypes";
 import { coatingTypeChoices } from "@/utils/coatingTypes";
+import { profileFamilyLabel } from "@/utils/ocrImport";
 import { constructionLabel as formatConstruction } from "@/utils/constructionLabel";
 import { fireLimitChoices } from "@/utils/fireLimits";
 import { num } from "@/utils/format";
-import type { OgzRow } from "@/types/ogz";
+import type { OgzRow, ProfileCandidate } from "@/types/ogz";
 
 const props = defineProps<{
   row: OgzRow;
@@ -137,6 +161,7 @@ defineEmits<{
   (e: "fire-limit", row: OgzRow, value: string): void;
   (e: "bearing", row: OgzRow, value: string): void;
   (e: "coating", row: OgzRow, value: string): void;
+  (e: "pick-mark", row: OgzRow, candidate: ProfileCandidate): void;
   (e: "edit", row: OgzRow): void;
   (e: "copy", row: OgzRow): void;
   (e: "remove", row: OgzRow): void;
@@ -146,10 +171,15 @@ const label = computed(() =>
   `${props.row.profileMark || props.row.profileRaw || "профиль"} ${props.row.construction || ""}`.trim()
 );
 
-const constructionLabel = computed(() => {
-  const formatted = formatConstruction(props.row.construction);
-  return formatted || "—";
-});
+// Вид профиля (двутавр, швеллер, уголок, труба…) — из наименования группы
+// спецификации, ГОСТ сортамента и марки; при наведении — полное наименование.
+const familyLabel = computed(() => profileFamilyLabel(props.row) || "—");
+
+// Элемент конструкции из колонки спецификации «Масса металла по элементам»
+// (балки, фермы, связи…). Одна строка спецификации с массой в нескольких
+// колонках даёт несколько строк ОГЗ — по одной на элемент: предел
+// огнестойкости назначается именно элементу, а не профилю.
+const constructionLabel = computed(() => formatConstruction(props.row.construction) || "—");
 
 const needsAttention = computed(
   () =>
@@ -214,6 +244,42 @@ const needsAttention = computed(
 
 .pdr__missing {
   color: var(--content-system-negative);
+}
+
+.pdr__cands {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--content-secondary-enabled);
+}
+
+.pdr__cand {
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--border-secondary-enabled);
+  border-radius: 6px;
+  background: var(--background-primary-a-enabled);
+  color: var(--content-primary-a-enabled);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.pdr__cand_known {
+  border-color: var(--content-accent-enabled);
+  color: var(--content-accent-enabled);
+}
+
+.pdr__cand:hover {
+  background: var(--background-tertiary-hover);
+}
+
+.pdr__cand-m {
+  margin-left: 4px;
+  color: var(--content-secondary-enabled);
 }
 
 .pdr__actions {

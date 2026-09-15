@@ -15,3 +15,9 @@ tasks/
 .vscode/
 *.exe
 dev/tmp/
+
+# Настройки агентов и редакторов — локальные
+.claude/
+.cursor/
+**/.claude/
+**/.cursor/

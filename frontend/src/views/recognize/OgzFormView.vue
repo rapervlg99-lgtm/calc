@@ -23,11 +23,21 @@ const confirming = ref(false)
 const prefilling = ref(false)
 const msg = ref('')
 const msgKind = ref<'ok' | 'err' | ''>('')
+const importNotes = ref<string[]>([])
 const profileTableRef = ref<InstanceType<typeof ProfileRowsTable> | null>(null)
 
-const attentionWord = computed(() =>
-  job.needsAttentionCount === 1 ? 'строка' : 'строк(и)'
-)
+function plural(n: number, one: string, few: string, many: string): string {
+  const m10 = n % 10
+  const m100 = n % 100
+  if (m10 === 1 && m100 !== 11) return one
+  if (m10 >= 2 && m10 <= 4 && (m100 < 10 || m100 >= 20)) return few
+  return many
+}
+
+/** «3 строки — № 2, 5, 7» по номерам из колонки «№» соответствующей вкладки. */
+function rowsPhrase(nums: number[]): string {
+  return `${nums.length} ${plural(nums.length, 'строка', 'строки', 'строк')} — № ${nums.join(', ')}`
+}
 const missingRWord = computed(() =>
   job.missingFireLimitCount === 1 ? 'элемент' : 'элементов'
 )
@@ -213,6 +223,11 @@ onMounted(async () => {
   if (job.job?.id === DEMO_JOB_ID && jobId.value !== DEMO_JOB_ID) {
     await router.replace(`/recognize/jobs/${DEMO_JOB_ID}`)
   }
+  // Заметки импорта из OCR — предупреждения («масса посчитана по размерам»,
+  // «профиль не найден»), а не подтверждение действия: показываем их отдельным
+  // жёлтым блоком над таблицей, а не зелёным уведомлением, и не даём затереть
+  // следующим «Строка обновлена».
+  importNotes.value = job.takeImportNotes()
 })
 </script>
 
@@ -260,12 +275,32 @@ onMounted(async () => {
         </div>
       </div>
 
-      <div v-if="job.needsAttentionCount > 0" class="ogz__banner">
-        <span>
-          {{ job.needsAttentionCount }}
-          {{ attentionWord }} требуют проверки или ввода массы — проверь их перед
-          подтверждением.
-        </span>
+      <!-- Один блок вместо двух: «где» (вкладка и номера строк — живой список,
+           пустеет по мере правок) и «почему» (заметки импорта из OCR, статичные,
+           можно скрыть). Блок «без предела ОС» остаётся отдельным: это другое
+           действие и другой момент — перед отправкой в калькулятор. -->
+      <div v-if="job.needsAttentionCount > 0 || importNotes.length" class="ogz__banner ogz__banner_check" role="status">
+        <div class="ogz__banner-title">Что проверить после распознавания</div>
+        <template v-if="job.needsAttentionCount > 0">
+          <div class="ogz__banner-sub">Требуют проверки или ввода массы — проверь перед подтверждением:</div>
+          <ul class="ogz__banner-list">
+            <li v-if="job.attentionRows.profile.length">
+              <button type="button" class="ogz__banner-link" @click="tab = 'profile'">Профильный погонаж</button>:
+              {{ rowsPhrase(job.attentionRows.profile) }}
+            </li>
+            <li v-if="job.attentionRows.sheet.length">
+              <button type="button" class="ogz__banner-link" @click="tab = 'sheet'">Листовая сталь</button>:
+              {{ rowsPhrase(job.attentionRows.sheet) }}
+            </li>
+          </ul>
+        </template>
+        <template v-if="importNotes.length">
+          <div class="ogz__banner-sub">Почему:</div>
+          <ul class="ogz__banner-list ogz__banner-list_notes">
+            <li v-for="(n, i) in importNotes" :key="i">{{ n }}</li>
+          </ul>
+          <button type="button" class="btn-ghost btn-sm ogz__banner-close" aria-label="Скрыть заметки импорта" @click="importNotes = []">Скрыть</button>
+        </template>
       </div>
 
       <div v-if="job.missingFireLimitCount > 0" class="ogz__banner ogz__banner_info">
@@ -404,6 +439,61 @@ onMounted(async () => {
 .ogz__banner_info {
   color: var(--content-secondary-enabled);
   background: var(--background-secondary-enabled);
+}
+
+.ogz__banner_check {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: start;
+  color: var(--content-primary-a-enabled);
+}
+
+.ogz__banner_check > * {
+  grid-column: 1;
+}
+
+.ogz__banner_check .ogz__banner-close {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.ogz__banner-sub {
+  margin-top: 6px;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.ogz__banner-list_notes {
+  color: var(--content-secondary-enabled);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.ogz__banner-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-weight: 600;
+  color: var(--content-primary-a-enabled);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.ogz__banner-link:hover {
+  color: var(--content-accent-enabled);
+}
+
+.ogz__banner-title {
+  font-weight: 600;
+  color: var(--content-system-warning);
+}
+
+.ogz__banner-list {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  font-size: 14px;
+  line-height: 20px;
 }
 
 .ogz__msg {

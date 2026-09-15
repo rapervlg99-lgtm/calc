@@ -22,12 +22,30 @@ func (h *handlers) listProfiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out := make([]map[string]any, 0, len(refs))
+	seen := make(map[string]struct{}, len(refs))
 	for _, ref := range refs {
+		seen[ref.Mark] = struct{}{}
 		out = append(out, map[string]any{
 			"id":           ref.ID,
 			"mark":         ref.Mark,
 			"massPerMeter": ref.MassPerMeter,
 			"source":       ref.Source,
+		})
+	}
+	// Встроенный инженерный справочник — те же глобальные записи, что использует
+	// пайплайн (sortament.handbookMass); записи из БД имеют приоритет.
+	for _, e := range sortament.HandbookEntries() {
+		if _, dup := seen[e.Mark]; dup {
+			continue
+		}
+		out = append(out, map[string]any{
+			"id":           0,
+			"mark":         e.Mark,
+			"massPerMeter": e.MassPerMeter,
+			"source":       sortament.SourceHandbook,
+			// категория 23met: у размерных марок («100Х8» — труба или уголок?)
+			// без неё масса неоднозначна
+			"category":     e.Category,
 		})
 	}
 	writeJSON(w, http.StatusOK, out)

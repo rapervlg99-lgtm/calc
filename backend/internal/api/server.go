@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -152,7 +153,7 @@ func (s *Server) handleCalc(w http.ResponseWriter, r *http.Request) {
 		rec := storage.CalculationRecord{
 			ID: id, ObjectName: req.ObjectName, TotalCents: resp.Totals.GrandCents,
 			Request: reqJSON, Response: respJSON,
-			IP: r.RemoteAddr, UserAgent: r.UserAgent(),
+			IP: clientIP(r), UserAgent: r.UserAgent(),
 		}
 		submit := func(ctx context.Context) {
 			if _, err := s.persistence.Calculations.Insert(ctx, rec); err != nil {
@@ -160,7 +161,8 @@ func (s *Server) handleCalc(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if s.persistence.Pool != nil {
-			s.persistence.Pool.Submit(r.Context(), submit)
+			// Контекст запроса отменяется сразу после ответа — без WithoutCancel вставка падала с «context canceled», и экспорт по calcId отдавал 404.
+			s.persistence.Pool.Submit(context.WithoutCancel(r.Context()), submit)
 		} else {
 			go submit(context.Background())
 		}
@@ -261,4 +263,13 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 
 func writeErr(w http.ResponseWriter, code int, msg string) {
 	writeJSON(w, code, map[string]string{"error": msg})
+}
+
+// clientIP возвращает адрес клиента без порта: колонка calculations.ip имеет тип inet,
+// а r.RemoteAddr приходит как «host:port» и ломал сохранение расчёта (SQLSTATE 22P02).
+func clientIP(r *http.Request) string {
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		return host
+	}
+	return r.RemoteAddr
 }

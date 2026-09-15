@@ -16,6 +16,61 @@ func dim(dims map[string]float64, keys ...string) float64 {
 	return 0
 }
 
+// normalizeDims приводит ключи размеров из справочника проката (dicts/roll.json)
+// к ключам, которыми оперируют формулы sectionArea/heatedPerimeter (h, b, s, t).
+// В справочнике квадратная труба задана как A/s, круглая — d/h (где h — стенка),
+// уголок — b (B)/t, гнутый профиль — h/b/t, тавр — S/S1/S2. Без приведения
+// у трубы 100х5 выходили F = -143 мм² и P = -17 мм, у круглой трубы и гнутого
+// профиля F = 0, у уголков — половина сечения; приведённая толщина падала в 0,
+// и расчёт брал максимальную толщину покрытия. Заполняются только отсутствующие
+// ключи: размеры, введённые пользователем, не трогаются. Сами формулы прежние.
+func normalizeDims(shape string, dims map[string]float64) {
+	setIfMissing := func(k string, v float64) {
+		if _, ok := dims[k]; !ok && v != 0 {
+			dims[k] = v
+		}
+	}
+	switch {
+	case strings.HasPrefix(shape, "tube_sq"):
+		if a, ok := dims["A"]; ok {
+			setIfMissing("h", a)
+			setIfMissing("b", a)
+		}
+		if bb, ok := dims["B"]; ok {
+			setIfMissing("b", bb)
+		}
+	case shape == "tube_sm", shape == "tube_":
+		// в справочнике круглой трубы d — диаметр, h — толщина стенки;
+		// в формулах h — диаметр, s — стенка
+		if d, ok := dims["d"]; ok {
+			if wall, ok2 := dims["h"]; ok2 {
+				setIfMissing("s", wall)
+			}
+			dims["h"] = d
+		}
+	case strings.HasPrefix(shape, "corner"):
+		if bb, ok := dims["B"]; ok {
+			setIfMissing("h", bb)
+		} else if b, ok := dims["b"]; ok {
+			setIfMissing("h", b)
+		}
+		if t, ok := dims["t"]; ok {
+			setIfMissing("s", t)
+		}
+	case strings.HasPrefix(shape, "profile"):
+		if t, ok := dims["t"]; ok {
+			setIfMissing("s", t)
+		}
+	case strings.HasPrefix(shape, "brands"):
+		if v, ok := dims["S1"]; ok {
+			setIfMissing("t", v)
+		}
+		if v, ok := dims["S2"]; ok {
+			setIfMissing("tr", v)
+		}
+	}
+}
+
 func sectionArea(shape string, dims map[string]float64) float64 {
 	h := dim(dims, "h", "H")
 	b := dim(dims, "b", "B")

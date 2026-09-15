@@ -1,5 +1,8 @@
 # infra — deploy stub (MVP)
 
+Рабочий вариант развёртывания на одной машине: `dev/docker-compose.yml` +
+`dev/scripts/deploy.sh`, описание в [docs/deploy.md](../docs/deploy.md).
+
 Stage/prod деплой по образцу blind-area-calc `infra/`. В MVP достаточно локального
 `dev/docker-compose.local.yml`. Здесь — каркас имён под slug **ozm**.
 

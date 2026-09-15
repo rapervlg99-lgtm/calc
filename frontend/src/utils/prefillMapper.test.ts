@@ -152,7 +152,7 @@ describe('prefillMapper', () => {
     expect(mapped.elements[0].element.htLevel).toBe(60)
     expect(mapped.elements[0].element.coat).toBe('1')
     expect(mapped.elements[0].element.method).toBe('1')
-    expect(mapped.betonAreaM2).toBe(24.6)
+    expect(mapped.sheetAreaM2).toBe(24.6)
     expect(mapped.useGroups).toBe(false)
     expect(mapped.groups).toHaveLength(1)
   })
@@ -206,5 +206,19 @@ describe('prefillMapper', () => {
     expect(mapped.groups[0].elements[0].element.rollId).toBe('46')
     expect(mapped.groups[1].title).toBe('Балки этаж 1')
     expect(mapped.groups[1].elements[0].element.rollId).toBe('100001')
+  })
+
+  it('matches unequal angles and bent profiles written as AхBхt', () => {
+    const roll: RollMark[] = [
+      { id: '508', shape: 'corner_ue', label: '140/90 x 8', dims: { B: 140, b: 90, t: 8, R: 12, r: 4 } },
+      { id: '410', shape: 'corner_e', label: '63 x 5', dims: { b: 63, t: 5, R: 7, r: 2.3 } },
+      { id: '13278', shape: 'profile_sm', label: '140/100 x 6', dims: { h: 140, b: 100, t: 6 } }
+    ]
+    const idx = buildRollIndex(roll)
+    expect(matchRoll('140х90х8', roll, idx)?.id).toBe('508')
+    expect(matchRoll('63х63х5', roll, idx)?.id).toBe('410')
+    expect(matchRoll('140х100х6', roll, idx)?.id).toBe('13278')
+    // квадратная запись «140х5» не должна цепляться к «140/90 x 8»
+    expect(matchRoll('140х5', roll, idx)).toBeNull()
   })
 })

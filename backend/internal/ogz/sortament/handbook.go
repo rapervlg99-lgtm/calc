@@ -3,6 +3,7 @@ package sortament
 import (
 	_ "embed"
 	"encoding/json"
+	"sort"
 	"strings"
 )
 
@@ -30,10 +31,38 @@ type handbookEntry struct {
 var (
 	handbookByKey  map[string]float64
 	handbookByMark map[string]handbookEntry
+	handbookAll    []HandbookEntry // все записи «категория/марка» в порядке файла
 )
 
 func init() {
 	handbookByKey, handbookByMark = loadHandbook(massHandbookJSON)
+	handbookAll = collectHandbook(massHandbookJSON)
+}
+
+// collectHandbook — плоский список записей для /ext/profiles: одна запись на
+// пару «категория/марка» (первая в файле), включая марки, встречающиеся в
+// нескольких категориях — их различает поле Category.
+func collectHandbook(raw []byte) []HandbookEntry {
+	var f handbookFile
+	if len(raw) == 0 || json.Unmarshal(raw, &f) != nil {
+		return nil
+	}
+	seen := map[string]struct{}{}
+	out := make([]HandbookEntry, 0, len(f.Entries))
+	for _, e := range f.Entries {
+		mark := strings.TrimSpace(e.Mark)
+		cat := strings.TrimSpace(e.Category)
+		if mark == "" || e.MassPerMeter <= 0 {
+			continue
+		}
+		key := cat + "/" + mark
+		if _, dup := seen[key]; dup {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, HandbookEntry{Mark: mark, Category: cat, MassPerMeter: e.MassPerMeter})
+	}
+	return out
 }
 
 func loadHandbook(raw []byte) (byKey map[string]float64, byMark map[string]handbookEntry) {
@@ -76,6 +105,30 @@ func loadHandbook(raw []byte) (byKey map[string]float64, byMark map[string]handb
 		}
 	}
 	return byKey, byMark
+}
+
+// HandbookEntry — запись встроенного справочника масс для внешних потребителей.
+type HandbookEntry struct {
+	Mark         string
+	Category     string
+	MassPerMeter float64
+}
+
+// HandbookEntries возвращает записи встроенного справочника (категория, марка,
+// масса), отсортированные по марке и категории. Используется /ext/profiles:
+// фронт считает длину из массы прямо в браузере для строк, импортированных из
+// локального OCR, и различает одноимённые марки разных категорий («140Х5» —
+// квадратная или круглая труба) по полю category.
+func HandbookEntries() []HandbookEntry {
+	out := make([]HandbookEntry, len(handbookAll))
+	copy(out, handbookAll)
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Mark != out[j].Mark {
+			return out[i].Mark < out[j].Mark
+		}
+		return out[i].Category < out[j].Category
+	})
+	return out
 }
 
 // handbookMass ищет массу 1 пог. метра в инженерном справочнике.

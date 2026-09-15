@@ -10,11 +10,23 @@ export type RowStatus =
 export type JobStatus = 'pending' | 'processing' | 'ready' | 'failed'
 export type MassSource = '23met' | 'manual' | 'cache' | 'formula'
 
+/**
+ * Вариант марки, когда OCR не разобрал букву серии («2011» → 20Б1 / 20Ш1 / 20К1).
+ * massPerMeter — по справочнику, 0 если марки в справочнике нет.
+ */
+export interface ProfileCandidate {
+  mark: string
+  massPerMeter: number
+  source: MassSource | ''
+}
+
 export interface OgzRow {
   id: number
   name: string
   profileMark: string
   profileRaw: string
+  /** Клиентское поле: варианты марки для выбора пользователем (только у строк из OCR). */
+  profileCandidates?: ProfileCandidate[]
   gostProfile: string
   steelGrade: string
   ppNumber: string
@@ -48,6 +60,8 @@ export interface Job {
 
 export interface OgzRowPatch {
   profileMark?: string
+  profileCandidates?: ProfileCandidate[]
+  massSource?: MassSource | ''
   massPerMeter?: number
   lengthM?: number
   classification?: string
@@ -71,6 +85,12 @@ export interface PrefillItem {
   coatingType: string
   /** Client-enriched: ogz row id for group membership mapping. */
   rowId?: number
+  /**
+   * Client-enriched: формы справочника проката, среди которых искать марку
+   * («140х5» есть и у квадратной, и у круглой трубы — категорию знает только
+   * строка спецификации). Пусто — искать по всему справочнику.
+   */
+  shapes?: string[]
 }
 
 /** Client-enriched: element groups from the OCR form table. */

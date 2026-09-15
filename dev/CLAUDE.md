@@ -25,7 +25,8 @@
 
 - Backend: Go 1.26, chi, pgx, goose — module `ozm/backend`
 - Frontend: Vue 3 + Vite + Pinia
-- Compose: `dev/docker-compose.local.yml` → UI `:5173`, API `:8080`
+- OCR: Python 3.12, пакет `ocrpdf` в `ocr/` (PyMuPDF, OpenCV, RapidOCR + Tesseract), тесты `pytest ocr/tests`, журнал `ocr/WORKLOG.md`
+- Compose: `dev/docker-compose.local.yml` → UI `:5173`, API `:8080`, OCR `:8000`
 - Env prefix: `CALC_OZM_*`
 - Service: `ozm-backend`, DB: `ozm`
 

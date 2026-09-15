@@ -1,0 +1,14 @@
+# HTTPS-фронт (профиль compose `tls`). Нужен домен, указывающий на сервер;
+# сертификат Let's Encrypt Caddy получает и продлевает сам.
+# PUBLIC_DOMAIN задаётся в .env, например calc.example.ru
+{$PUBLIC_DOMAIN} {
+	encode gzip
+	request_body {
+		max_size 100MB
+	}
+	reverse_proxy frontend:8080 {
+		transport http {
+			read_timeout 900s
+		}
+	}
+}

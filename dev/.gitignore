@@ -1,6 +1,12 @@
-# Junctions — не коммитить (локальные ссылки на ../backend, ../frontend)
+# Junctions — не коммитить (локальные ссылки на ../backend, ../frontend, ../ocr)
 backend/
 frontend/
+ocr/
+
+# Деплой: пароли и шрифты (лицензии) не коммитить
+deploy/htpasswd
+deploy/fonts/*.ttf
+deploy/fonts/*.TTF
 
 # Env / local
 .env
@@ -20,3 +26,7 @@ tmp/
 *.code-workspace
 *.log
 *.exe
+.env.share
+deploy/share-url.txt
+deploy/share-url.log
+deploy/share-tunnel.pid
