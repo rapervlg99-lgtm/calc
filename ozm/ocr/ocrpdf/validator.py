@@ -53,6 +53,8 @@ def mass_decimals(rows: list[LogicalRow], cols: list[Column], default: int = 2) 
     """Число знаков после запятой у масс на листе: максимум по числовым ячейкам
     колонок масс. Нет чисел — `default`."""
     keys = _element_keys(cols) + ["total_mass"]
+    # массы в килограммах переведены в тонны: у «13634» три знака после запятой
+    extra = 3 if any(c.unit == "кг" for c in cols if c.role in ("element_mass", "total_mass")) else 0
     best = -1
     for row in rows:
         for key in keys:
@@ -61,7 +63,7 @@ def mass_decimals(rows: list[LogicalRow], cols: list[Column], default: int = 2) 
                 continue
             t = str(cell.text).strip().replace(",", ".")
             frac = t.split(".", 1)[1] if "." in t else ""
-            digits = len("".join(ch for ch in frac if ch.isdigit()))
+            digits = len("".join(ch for ch in frac if ch.isdigit())) + extra
             best = max(best, digits)
     return best if best >= 0 else default
 

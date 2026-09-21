@@ -119,6 +119,7 @@
                   @bearing="onBearingTypeChange"
                   @coating="onCoatingTypeChange"
                   @pick-mark="onPickMark"
+                  @set-mark="onSetMark"
                   @edit="$emit('edit', $event)"
                   @copy="$emit('copy', $event)"
                   @remove="$emit('remove', $event)"
@@ -207,6 +208,7 @@
               @bearing="onBearingTypeChange"
               @coating="onCoatingTypeChange"
               @pick-mark="onPickMark"
+              @set-mark="onSetMark"
               @edit="$emit('edit', $event)"
               @copy="$emit('copy', $event)"
               @remove="$emit('remove', $event)"
@@ -228,6 +230,9 @@ import {
 import { fireLimitChoices } from "@/utils/fireLimits";
 import { autoGroupByConstruction, hasConstructions } from "@/utils/autoGroup";
 import type { OgzRow, OgzRowPatch, ProfileCandidate } from "@/types/ogz";
+import type { ProfileOption } from "@/utils/profileSuggest";
+import { groupForCategory } from "@/utils/profileGroups";
+import { profileCategory } from "@/utils/ocrImport";
 
 export interface ElementGroup {
   id: string;
@@ -500,6 +505,41 @@ function onPickMark(row: OgzRow, cand: ProfileCandidate): void {
     patch.massSource = cand.source;
     patch.status = "Требует проверки";
   }
+  emit("patch", row.id, patch);
+}
+
+/**
+ * Ручной ввод номера профиля. Выбор из справочника: марка, масса 1 м из
+ * справочника, статус «Посчитано» (длина пересчитается из массы в patch).
+ * Свой текст, которого в справочнике нет: марка меняется, масса остаётся
+ * прежней, но строка уходит на проверку — прежняя масса относилась к другой марке.
+ */
+function onSetMark(row: OgzRow, option: ProfileOption | null, text: string): void {
+  if (option) {
+    if (option.mark === row.profileMark && option.massPerMeter === row.massPerMeter) return;
+    const patch: OgzRowPatch = {
+      profileMark: option.mark,
+      profileCandidates: [],
+      massPerMeter: option.massPerMeter,
+      massSource: "23met",
+      status: "Посчитано",
+    };
+    // Марка другого вида профиля (двутавр → швеллер): наименование группы и
+    // ГОСТ сортамента из спецификации больше не про эту строку — меняем и их,
+    // иначе колонки «Наименование профиля» и «ГОСТ профиля» останутся старыми.
+    const was = profileCategory(row.name || "", row.gostProfile || "", row.profileRaw || row.profileMark || "");
+    const group = option.category && option.category !== was ? groupForCategory(option.category, option.mark) : null;
+    if (group) {
+      patch.name = group.name;
+      patch.gostProfile = group.gost;
+    }
+    emit("patch", row.id, patch);
+    return;
+  }
+  const mark = text.trim();
+  if (mark === (row.profileMark || "")) return;
+  const patch: OgzRowPatch = { profileMark: mark, profileCandidates: [] };
+  if (mark && row.massPerMeter > 0) patch.status = "Требует проверки";
   emit("patch", row.id, patch);
 }
 

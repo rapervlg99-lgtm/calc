@@ -127,7 +127,7 @@ def strip_profile_glyph(text: str, recognised: bool) -> tuple[str, str]:
 # на file-45 «⌶ 25Б1» приходит как «25Б1 т», «∟ 25х3» — «25х3 □», «⊏ 8П» — «8П С»,
 # «⌶ 45М» — «45М 7», а в другом окружении тот же значок — «1» («25Б1 1»).
 # Хвост снимается, только если остаток — обозначение.
-_TRAILING_GLYPH_RE = re.compile(r"^(?P<m>[\s\S]+?\S)\s+(?P<g>[тТLlСC71IΙ□◻■⌶∟⌐\[])$")
+_TRAILING_GLYPH_RE = re.compile(r"^(?P<m>[\s\S]+?\S)\s+(?P<g>[тТLlСC71IΙ□口▢◻■⌶∟⌐D\[])$")
 _DESIGNATION_RE = re.compile(
     r"^(?:\d{2,3}[БШКДМ]\d?|(?:Гн\.?\s?□?\s?)?\d{1,3}(?:[.,]\d)?[хx×]\d{1,3}(?:[хx×]\d{1,2}(?:[.,]\d)?)?"
     r"|\d{1,3}[Пп]а?|t\s?\d{1,3}(?:[хx×]\d{1,3})?|RD\d{1,3}|Ø\d{1,3}|\d{2,3}[Сс]\d?)$")
@@ -202,15 +202,38 @@ def fix_sheet_thickness(rows) -> int:
             if id(size) in seen or size.source not in RECOGNISED_SOURCES:
                 continue
             seen.add(id(size))
-            thickness = _thickness_from_bare(size.text or "")
+            raw = size.text
+            bare = _SHEET_DASH_RE.sub("", (raw or "").strip())
+            md = _DELTA_THICKNESS_RE.fullmatch(bare)
+            if md and not _THICKNESS_MARK_RE.fullmatch(bare):
+                # «5=4ММ» → t4: дельта прочитана цифрой, «мм» — заглавными
+                size.text = "t" + md.group("v").replace(".", ",")
+                size.normalized_value = size.text
+                size.value_kind = "code"
+                size.requires_review = True
+                size.notes.append("толщина листа через «δ=»: дельта и «мм» прочитаны с ошибками; raw=%r" % raw)
+                fixed += 1
+                continue
+            if _THICKNESS_MARK_RE.fullmatch(bare) and bare != raw.strip():
+                # «—t16»: значок листа перед готовой толщиной — снимаем без пометки
+                size.text = "t" + bare[1:].strip()
+                size.normalized_value = size.text
+                size.value_kind = "code"
+                size.notes.append("снят значок листа «—» перед толщиной; raw=%r" % raw)
+                fixed += 1
+                continue
+            thickness = _thickness_from_bare(bare)
             if thickness is None:
                 continue
-            raw = size.text
             size.text = "t" + thickness
             size.normalized_value = size.text
             size.value_kind = "code"
-            size.requires_review = True
-            size.notes.append("в группе листового проката одинокое число — толщина; raw=%r" % raw)
+            if bare != raw.strip() and thickness == bare.replace(".", ","):
+                # «—14»: значок листа и число целиком — толщина без догадок
+                size.notes.append("значок листа «—» и число — толщина; raw=%r" % raw)
+            else:
+                size.requires_review = True
+                size.notes.append("в группе листового проката одинокое число — толщина; raw=%r" % raw)
             fixed += 1
     return fixed
 
@@ -228,6 +251,52 @@ _IBEAM_ONE_RE = re.compile(r"^(?P<h>\d{2,3})1(?P<n>\d)$")
 # «301», «352»: буква серии выпала вовсе — кандидаты по всем сериям ГОСТ 26020.
 _IBEAM_BARE_RE = re.compile(r"^(?P<h>\d{2,3})(?P<n>\d)$")
 _IBEAM_SERIES = ("Б", "Ш", "К")
+# Высоты двутавров (см) по ГОСТ 26020-83 / СТО АСЧМ 20-93 / ГОСТ Р 57837-2017.
+# Нужны, чтобы «2051» разобрать как 20Б1 (серия «Б» прочитана пятёркой),
+# а не как двутавр высотой 205 с потерянной буквой.
+IBEAM_HEIGHTS_CM = {10, 12, 14, 16, 18, 20, 23, 25, 26, 30, 35, 40, 45, 50, 55, 60, 70, 80, 90, 100}
+# «2051», «1651»: RapidOCR в чертёжном курсиве читает «Б» и как «5» (не только «6»).
+_IBEAM_FIVE_RE = re.compile(r"^(?P<h>\d{2,3})5(?P<n>\d)$")
+# Швеллер «22П»/«16П»: «П» прочитана как «7» («227», «167»). Высоты — ГОСТ 8240-97.
+CHANNEL_HEIGHTS_CM = {5, 6.5, 8, 10, 12, 14, 16, 18, 20, 22, 24, 27, 30, 33, 36, 40}
+_CHANNEL_SEVEN_RE = re.compile(r"^[?\[]?\s*(?P<h>\d{1,2})7$")
+# Чтение швеллера вторым движком: «[16П», «?27n» — значок и буква серии.
+_CHANNEL_ALT_RE = re.compile(r"^[?\[|IΙL]?\s*(?P<h>\d{1,2})\s*[ПпnNPp](?P<a>[аaУуYy]?)$")
+# Швеллер без буквы серии («16», «24»): второй движок нередко видит букву
+# («c16n», «[ 16nl», «|[2%П») — ищем «высота + П» в его чтении.
+_CHANNEL_BARE_RE = re.compile(r"^\d{1,2}(?:[.,]5)?$")
+_CHANNEL_ALT_ANY_RE = re.compile(r"(?<!\d)(?P<h>\d{1,2}(?:[.,]5)?)\s*[ПпnNPp](?P<a>[аaУуYy]?)")
+# Значок двутавра прилип к марке без пробела: «I23Ш1» → «123Ш1». Высоты 123
+# нет, 23 есть — единица лишняя.
+_IBEAM_GLUED_ONE_RE = re.compile(r"^1(?P<h>\d{2})(?P<s>[БШКДМ])(?P<n>\d)$")
+# Гнутый профиль «Гн.100х5»: «Г» теряется, «н» читается латинской «H». Только
+# перед размером «сторона х толщина»: профнастил «Н75-750-0,8» в группе
+# «…гнутые с трапецеидальными гофрами» — настоящая «Н» марки.
+_BENT_PREFIX_RE = re.compile(r"^[HНhн]\.?\s*(?=\d{2,3}\s?[хx×]\s?\d)")
+# Пробел внутри целого («4 72», «4 12.00»): одна цифра слева — не «потерянная
+# запятая» (там слева минимум две). Склеиваем только с подтверждением второго движка.
+_SPLIT_INT_RE = re.compile(r"^\d[\s\u00a0\u2009]+\d{2,}(?:[.,]\d+)?$")
+_TRAILING_SEP_RE = re.compile(r"^([+-]?\d+)[.,]$")
+# Толщина листа через дельту: «δ=4 мм» растровый OCR читает «5=4ММ», «d=6 мм», «6=8 НМ».
+_DELTA_THICKNESS_RE = re.compile(r"^[δбдd5б6S0O]\s*[=:]\s*(?P<v>\d{1,3}(?:[.,]\d)?)\s*[мМmMнНhHxXхХnN]{0,2}\.?$")
+# Гнутые замкнутые профили ГОСТ 30245 и трубы ГОСТ 8639/8645: ширина стороны.
+TUBE_SIDES_MM = {40, 50, 60, 70, 80, 90, 100, 110, 120, 140, 150, 160, 180, 200, 250, 300, 350, 400}
+# Значок «□» перед размером на растре низкого разрешения: «/20х5», «080х5», «060х5».
+_TUBE_JUNK_RE = re.compile(r"^(?P<j>(?:[/\\|]+|0+|[DО口□▢]|0\s)\s*)(?=\d{2,3}[хx×]\d)")
+_TUBE_SIZE_RE = re.compile(r"^(?P<a>\d{2,3})[хx×](?P<b>\d{1,2}(?:[.,]\d)?)$")
+# Лист просечно-вытяжной «ПВ-506»: «П» уходит в латинскую N/H («NВ-506», «HB-506»).
+_PV_SHEET_RE = re.compile(r"^[NНПnHh]?\s?[ВB]\s?[-–—]?\s?(?P<n>\d{3})$")
+# Значок листа «—» перед толщиной («—t16», «—14», «—+20»): на чертеже это
+# условное обозначение полосы/листа по ЕСКД, в само обозначение не входит.
+_SHEET_DASH_RE = re.compile(r"^[-–—]\s*(?=\S)")
+_SHEET_DASH_T_RE = re.compile(r"^[-–—]\s*(?=[tTδ+]\s?\d)")
+# Скобка линовки перед наименованием группы: «[Прокат листовой». Только перед
+# буквой: «[120х60х4» в графе размера — значок швеллера, его не трогаем.
+_GROUP_LEADING_JUNK_RE = re.compile(r"^[\[\]|]\s*(?=[А-Яа-яЁёA-Za-z])", re.M)
+# Строка-артефакт из одной буквы под маркой стали («5245⏎ГОСТ 27772-88⏎э»).
+_JUNK_LINE_RE = re.compile(r"^[а-яёa-z]$")
+# Углеродистая сталь «Ст20», «Ст3сп5»: чертёжное «т» OCR читает латинской «m».
+_STEEL_ST_RE = re.compile(r"^[СC][mt](?=\d)")
 _IBEAM_ALT_RE = re.compile(r"(?P<h>\d{2,3})\s*(?P<s>[БШКДМBWKDM])\s*(?P<n>\d)")
 _SERIES_LATIN = str.maketrans("BWKDM", "БШКДМ")
 # Лишний знак между серией и номером из шаблонов глифов: «20Кз1» (з → 3 после
@@ -250,12 +319,12 @@ _BROKEN_THREE_RE = re.compile(r"[+?][эз]")
 # («С255», «С345-6», «С355Б»). OCR читает «С» как «(», «6» или «[», «Б» как «6».
 STEEL_GRADES = {"235", "245", "255", "275", "285", "345", "355", "375", "390", "440", "550", "590"}
 _GRADE_TOKEN_RE = re.compile(
-    r"^(?P<pre>[\(\[\{6бБCcСс]?)\s?(?P<num>[2-5]\d\d)(?P<suf>[6бБ]|[-–]\s?\d)?(?P<tail>[,;.:]?)$")
+    r"^(?P<pre>[\(\[\{€56бБCcСс]?)\s?(?P<num>[2-5]\d\d)(?P<suf>[6бБ]|[-–]\s?\d)?(?P<tail>[,;.:]?)$")
 
 
 def fix_steel_grade(text: str) -> str:
-    """«6255» -> «С255», «(3556» -> «С355Б», «(245-4» -> «С245-4» — только для
-    известных номеров марок; остальное не трогается."""
+    """«6255» -> «С255», «5245» -> «С245», «(3556» -> «С355Б», «(245-4» -> «С245-4» —
+    только для известных номеров марок; остальное не трогается."""
     parts = text.replace("\n", " ").split(" ", 1)
     if not parts or not parts[0]:
         return text
@@ -343,17 +412,31 @@ def fix_profile_series(rows) -> int:
         if size.source not in RECOGNISED_SOURCES:
             continue
         new = None
-        if "двутавр" in folded:
+        if "двутавр" in folded and _IBEAM_GLUED_ONE_RE.fullmatch(text):
+            mg = _IBEAM_GLUED_ONE_RE.fullmatch(text)
+            if int(mg.group("h")) in IBEAM_HEIGHTS_CM and int("1" + mg.group("h")) not in IBEAM_HEIGHTS_CM:
+                new = mg.group("h") + mg.group("s") + mg.group("n")
+                why = "значок двутавра прилип к марке единицей"
+        elif "двутавр" in folded:
             m = _IBEAM_SIX_RE.fullmatch(text)
+            m5 = _IBEAM_FIVE_RE.fullmatch(text)
             m1 = _IBEAM_ONE_RE.fullmatch(text)
-            alt = _IBEAM_ALT_RE.search(size.alt_text or "") if (m or m1) else None
-            if alt and alt.group("h") == (m or m1).group("h"):
-                # второй движок видел букву серии — верим ему («I20Ш1» → 20Ш1)
+            alt = _IBEAM_ALT_RE.search(size.alt_text or "") if _BARE_PROFILE_DIGITS.fullmatch(text) else None
+            if (alt and text.startswith(alt.group("h")) and text.endswith(alt.group("n"))
+                    and len(text) - len(alt.group("h")) - len(alt.group("n")) <= 1):
+                # второй движок видел букву серии — верим ему («I20Ш1» → 20Ш1,
+                # «Т20Б1» при «2051» → 20Б1); между высотой и номером не больше
+                # одного знака (цифра вместо буквы или ничего)
                 new = alt.group("h") + alt.group("s").translate(_SERIES_LATIN) + alt.group("n")
                 why = "серия двутавра взята из чтения вторым движком (%r)" % size.alt_text
             elif m:
                 new = m.group("h") + "Б" + m.group("n")
                 why = "серия двутавра «Б» прочитана цифрой"
+            elif (m5 and int(m5.group("h")) in IBEAM_HEIGHTS_CM
+                    and int(m5.group("h") + "5") not in IBEAM_HEIGHTS_CM):
+                # «2051» → 20Б1: высота 20 есть в сортаменте, 205 — нет
+                new = m5.group("h") + "Б" + m5.group("n")
+                why = "серия двутавра «Б» прочитана цифрой «5»"
             elif m1:
                 size.requires_review = True
                 size.candidates = [m1.group("h") + s + m1.group("n") for s in _IBEAM_SERIES]
@@ -368,12 +451,60 @@ def fix_profile_series(rows) -> int:
         elif "швеллер" in folded:
             m = _CHANNEL_RE.fullmatch(text)
             mp = _CHANNEL_PLUS_RE.fullmatch(text)
+            m7 = _CHANNEL_SEVEN_RE.fullmatch(text)
+            alt7 = _CHANNEL_ALT_RE.fullmatch((size.alt_text or "").strip()) if m7 else None
             if m:
                 new = m.group("h") + "П" + ("а" if m.group("a") else "")
                 why = "серия швеллера «П» прочитана латиницей/значок «[» как «?»"
             elif mp:
                 new = "3" + mp.group("d") + "П"
                 why = "глиф «3» пришёл как «++», значок «[» — как «?»"
+            elif m7 and alt7 and alt7.group("h") == m7.group("h"):
+                # «167» при «[16П» у второго движка → 16П
+                new = m7.group("h") + "П" + ("а" if alt7.group("a") else "")
+                why = "серия швеллера «П» прочитана цифрой «7», буква взята из чтения вторым движком (%r)" % size.alt_text
+            elif m7 and float(m7.group("h")) in CHANNEL_HEIGHTS_CM:
+                # «227» → 22П: высота 22 есть в ГОСТ 8240, швеллера «227» не бывает
+                new = m7.group("h") + "П"
+                why = "серия швеллера «П» прочитана цифрой «7»"
+            elif _CHANNEL_BARE_RE.fullmatch(text):
+                # «16» при «c16n» / «[ 16nl» у второго движка → 16П; без
+                # подтверждения голое число остаётся — это допустимое обозначение
+                for am in _CHANNEL_ALT_ANY_RE.finditer(size.alt_text or ""):
+                    if am.group("h").replace(",", ".") == text.replace(",", "."):
+                        new = text + "П" + ("а" if am.group("a") else "")
+                        why = "буква серии швеллера взята из чтения вторым движком (%r)" % size.alt_text
+                        break
+        elif ("гнут" in folded or "замкнут" in folded
+              or ("труб" in folded and ("квадрат" in folded or "прямоуг" in folded))):
+            mj = _TUBE_JUNK_RE.match(text)
+            if _BENT_PREFIX_RE.match(text):
+                # «H.100x5» → «Гн.100х5»: калькулятор знает префикс гнутого профиля
+                new = _BENT_PREFIX_RE.sub("Гн.", text)
+                why = "префикс гнутого профиля «Гн.» прочитан латиницей"
+            elif mj and mj.group("j").strip() in ("D", "口", "□", "▢", "О"):
+                # «D40х40х4»: значок «□» пришёл латинской D — снимаем без пометки,
+                # это однозначный двойник (калькулятор тоже его снимает)
+                size.notes.append("снят значок «□» перед размером, прочитанный как %r; raw=%r" % (mj.group("j"), size.text))
+                size.text = text[mj.end():]
+                size.normalized_value = size.text
+                text = size.text
+            elif mj:
+                # «/20х5», «080х5»: значок «□» на растре стал чертой или нулём
+                new = text[mj.end():]
+                why = "значок «□» перед размером прочитан как %r" % mj.group("j")
+            ms = _TUBE_SIZE_RE.fullmatch((new or text).replace("Гн.", ""))
+            if ms and int(ms.group("a")) not in TUBE_SIDES_MM:
+                # «700х5», «20х5» — такой стороны в сортаменте нет: значок «□» слился с цифрами
+                size.requires_review = True
+                size.notes.append("сторона %s мм не встречается в ГОСТ 30245/8639 — возможно, значок «□» "
+                                  "слился с размером" % ms.group("a"))
+        elif "лист" in folded or "просечн" in folded:
+            mv = _PV_SHEET_RE.fullmatch(text)
+            if mv and text != "ПВ-" + mv.group("n"):
+                # «NВ-506» / «HB-506»: просечно-вытяжной лист, «П» прочитана латиницей
+                new = "ПВ-" + mv.group("n")
+                why = "просечно-вытяжной лист «ПВ»: буква «П» прочитана латиницей"
         elif "рельс" in folded:
             m = _RAIL_RE.fullmatch(text)
             if m and text != "КР" + m.group("n"):
@@ -398,6 +529,51 @@ def fix_profile_series(rows) -> int:
         size.requires_review = True
         fixed += 1
     return fixed
+
+
+# Спецификация металлопроката на 2000 т и больше — редкость; итог такого порядка
+# при спорной единице в шапке означает килограммы.
+KG_THRESHOLD = 2000.0
+
+
+def resolve_mass_unit(grid, cols, header_rows) -> str:
+    """Снимает «кг?» (подписи шапки противоречат друг другу) по порядку чисел в
+    колонке общей массы: максимум ≥ KG_THRESHOLD — килограммы. Возвращает
+    итоговую единицу колонок масс."""
+    mass_cols = [c for c in cols if c.role in ("element_mass", "total_mass")]
+    if not any(c.unit == "кг?" for c in mass_cols):
+        return next((c.unit for c in mass_cols), "т") or "т"
+    total_idx = {c.index for c in cols if c.role == "total_mass"} or {c.index for c in mass_cols}
+    biggest = 0.0
+    for (r, c), cell in grid.items():
+        if r in header_rows or c not in total_idx:
+            continue
+        if isinstance(cell.normalized_value, (int, float)) and cell.value_kind == "number":
+            biggest = max(biggest, float(cell.normalized_value))
+    unit = "кг" if biggest >= KG_THRESHOLD else "т"
+    for c in mass_cols:
+        c.unit = unit
+    return unit
+
+
+def apply_mass_unit(grid, cols, header_rows) -> int:
+    """Массы, подписанные в шапке килограммами, переводятся в тонны: числовое
+    значение делится на 1000, текст ячейки остаётся как на чертеже. Возвращает
+    число переведённых ячеек."""
+    kg_cols = {c.index for c in cols if c.role in ("element_mass", "total_mass") and c.unit == "кг"}
+    if not kg_cols:
+        return 0
+    done = 0
+    seen: set[int] = set()
+    for (r, c), cell in grid.items():
+        if r in header_rows or c not in kg_cols or id(cell) in seen:
+            continue
+        seen.add(id(cell))
+        if isinstance(cell.normalized_value, (int, float)) and cell.value_kind == "number":
+            cell.normalized_value = round(cell.normalized_value / 1000.0, 6)
+            cell.notes.append("масса в шапке подписана в кг — переведена в т")
+            done += 1
+    return done
 
 
 def fill_positions(rows) -> int:
@@ -693,13 +869,82 @@ def _fold_homoglyphs(text: str) -> tuple[str, bool]:
     return folded, folded != text
 
 
+# Стандарт сортамента однозначно задаёт вид профиля, а его номер — цифры,
+# которые OCR читает надёжнее слов. Если словарное имя расходится со
+# стандартом («Трубы квадратные» при ГОСТ 10704 — трубы электросварные
+# круглые; «равнополочные» при ГОСТ 8510 — неравнополочные), верим номеру.
+# Значение: (каноническое имя; подстроки, хотя бы одна из которых есть в
+# согласном имени; регулярные выражения слов, которые стандарту ПРОТИВОРЕЧАТ).
+# Имя без нужных слов, но и без противоречащих («Прокат горячекатаный» при
+# ГОСТ 19903) — просто менее точное: уточняется без пометки на проверку.
+# Противоречие («Трубы квадратные» при ГОСТ 10704) — замена с пометкой.
+_TUBE_SHAPES = (r"квадратн", r"прямоугольн", r"гнут", r"замкнут")
+_STD_GROUP_HINT = {
+    "ГОСТ 8509": ("Уголки стальные горячекатаные равнополочные", ("равнополочн",), (r"неравнополочн",)),
+    "ГОСТ 8510": ("Уголки стальные горячекатаные неравнополочные", ("неравнополочн",), (r"(?<!не)равнополочн",)),
+    "ГОСТ 8240": ("Швеллеры стальные горячекатаные", ("швеллер",), (r"двутавр", r"уголк", r"труб", r"лист")),
+    "ГОСТ 8239": ("Двутавры стальные горячекатаные", ("двутавр",), (r"швеллер", r"уголк", r"труб", r"лист")),
+    "ГОСТ 26020": ("Двутавры стальные горячекатаные с параллельными гранями полок", ("двутавр",),
+                   (r"швеллер", r"уголк", r"труб", r"лист")),
+    "ГОСТ 57837": ("Двутавры стальные горячекатаные с параллельными гранями полок", ("двутавр",),
+                   (r"швеллер", r"уголк", r"труб", r"лист")),
+    "ГОСТ 10704": ("Трубы стальные электросварные прямошовные", ("электросварн",), _TUBE_SHAPES + (r"бесшовн",)),
+    "ГОСТ 10705": ("Трубы стальные электросварные прямошовные", ("электросварн",), _TUBE_SHAPES + (r"бесшовн",)),
+    "ГОСТ 8732": ("Трубы стальные бесшовные горячедеформированные", ("бесшовн",), _TUBE_SHAPES + (r"электросварн",)),
+    "ГОСТ 8731": ("Трубы стальные бесшовные горячедеформированные", ("бесшовн",), _TUBE_SHAPES + (r"электросварн",)),
+    "ГОСТ 8639": ("Трубы стальные квадратные", ("квадратн",), (r"прямоугольн", r"электросварн", r"бесшовн")),
+    "ГОСТ 8645": ("Трубы стальные прямоугольные", ("прямоугольн",), (r"квадратн", r"электросварн", r"бесшовн")),
+    "ГОСТ 30245": ("Профили стальные гнутые замкнутые сварные квадратные и прямоугольные для строительных конструкций",
+                   ("квадратн", "прямоугольн", "гнут", "замкнут"), (r"электросварн", r"бесшовн", r"уголк", r"швеллер")),
+    "ГОСТ 19903": ("Прокат листовой горячекатаный", ("лист",), (r"холоднокатан", r"просечно", r"гнут", r"профил")),
+    "ГОСТ 19904": ("Прокат листовой холоднокатаный", ("лист",), (r"горячекатан", r"просечно", r"гнут", r"профил")),
+    "ТУ 36.26.11": ("Листы стальные просечно-вытяжные", ("просечно",), (r"прокат", r"гнут", r"профил")),
+}
+
+
+def _std_key(std: str) -> str:
+    """«ГОСТ 10704-91» → «ГОСТ 10704», «ГОСТ Р 57837-2017» → «ГОСТ 57837»,
+    «ТУ 36.26.11-5-89» → «ТУ 36.26.11»."""
+    parts = std.split()
+    if len(parts) < 2:
+        return ""
+    kind, num = parts[0], parts[-1]
+    if kind == "ТУ":
+        return "ТУ " + num.split("-")[0]
+    m = re.match(r"\d+", num)
+    return (kind + " " + m.group(0)) if m else ""
+
+
+def group_by_standard(stds: list[str]) -> tuple[str, tuple[str, ...], tuple[str, ...]] | None:
+    """Подсказка по стандартам ячейки; None, если стандартов нет, они неизвестны
+    или указывают на разные виды профиля."""
+    hints = {_STD_GROUP_HINT[k] for k in (_std_key(s) for s in stds) if k in _STD_GROUP_HINT}
+    if len(hints) != 1:
+        return None
+    return hints.pop()
+
+
+# Наименование группы — несколько слов и стандарты; примечание к таблице —
+# длинный текст с двоеточиями и предложениями.
+_MAX_GROUP_NAME_WORDS = 10
+
+
+def _looks_like_group_name(text: str) -> bool:
+    from .structure import is_service_profile_text
+    if is_service_profile_text(text):
+        return False
+    words = strip_standards(text.replace("\n", " "), bare=True).split()
+    return 0 < len(words) <= _MAX_GROUP_NAME_WORDS
+
+
 def _canon_profile_group(cell: Cell) -> None:
     """Подтягивает OCR-кашу наименования профиля к закрытому словарю групп.
 
     «Мроdunu стцльные еНУМbIЕ замкнутые сбарные...» — это то же
     «Профили стальные гнутые замкнутые сварные...», а не новое значение.
     ГОСТ/ТУ из исходной ячейки сохраняем. Служебные строки («Итого»)
-    словарь не трогает.
+    словарь не трогает. Если словарное имя противоречит стандарту сортамента
+    в той же ячейке, вид профиля берётся по стандарту (см. _STD_GROUP_HINT).
     """
     if row_marker(cell.text):
         return
@@ -711,20 +956,47 @@ def _canon_profile_group(cell: Cell) -> None:
         canon, ratio = canonical_profile_group(cell.alt_text)
         if canon:
             cell.notes.append("наименование группы взято по чтению второго движка (%r)" % cell.alt_text)
+    stds = extract_standards(cell.text, bare=True)
+    # подсказка по стандарту — только для наименования группы: примечания к
+    # таблице тоже ссылаются на ГОСТ («…по ГОСТ 19903-2015»), но это не группа
+    hint = group_by_standard(stds) if _looks_like_group_name(cell.text) else None
+    conflict = False
+    if hint is not None:
+        name, need, forbid = hint
+        low = canon.lower()
+        contradicts = bool(canon) and any(re.search(w, low) for w in forbid)
+        agrees = bool(canon) and not contradicts and any(w in low for w in need)
+        if contradicts:
+            # слова расходятся со стандартом — вид профиля по стандарту, на проверку
+            conflict = True
+            cell.notes.append("наименование группы «%s» расходится со стандартом %s — "
+                              "принято «%s»" % (canon, ", ".join(stds), name))
+            canon = name
+        elif not agrees and canon:
+            # имя не противоречит стандарту, но менее точное («Прокат горячекатаный»)
+            cell.notes.append("наименование группы «%s» уточнено по стандарту %s" % (canon, ", ".join(stds)))
+            canon = name
+        elif not canon:
+            cell.notes.append("наименование группы восстановлено по стандарту %s" % ", ".join(stds))
+            canon, ratio = name, 0.0
     if not canon:
         return
-    stds = extract_standards(cell.text, bare=True)
     # размер профиля внутри наименования («Труба квадратная 120х120х6») сохраняем:
     # его заберёт графа размера, если она пуста
     size = _TUBE_IN_GROUP_RE.search(cell.text)
     if size:
         canon = canon + " " + "%sх%sх%s" % size.groups()
-    cell.notes.append(
-        "наименование профиля приведено к каноническому виду (%.2f); raw=%r"
-        % (ratio, cell.text))
+    if ratio > 0:
+        cell.notes.append(
+            "наименование профиля приведено к каноническому виду (%.2f); raw=%r"
+            % (ratio, cell.text))
+    else:
+        cell.notes.append("raw=%r" % cell.text)
     cell.text = canon if not stds else canon + "\n" + " ".join(stds)
     if ratio >= 0.80:
         cell.requires_review = False
+    if conflict:
+        cell.requires_review = True
 
 
 def normalize_cell(cell: Cell, role: str) -> Cell:
@@ -769,6 +1041,20 @@ def normalize_cell(cell: Cell, role: str) -> Cell:
             if fixed != cell.text:
                 cell.notes.append("скобка перед словом прочитана вместо «С»; raw=%r" % cell.text)
                 cell.text = fixed
+            if role == "profile_group":
+                cleaned = _GROUP_LEADING_JUNK_RE.sub("", cell.text)
+                if cleaned != cell.text:
+                    cell.notes.append("снят артефакт линовки перед наименованием; raw=%r" % cell.text)
+                    cell.text = cleaned
+            if role == "steel_grade":
+                lines = cell.text.split("\n")
+                kept = [ln for ln in lines if not _JUNK_LINE_RE.fullmatch(ln.strip())]
+                if kept and len(kept) < len(lines):
+                    cell.notes.append("снята строка-артефакт из одной буквы; raw=%r" % cell.text)
+                    cell.text = "\n".join(kept)
+                if _STEEL_ST_RE.match(cell.text.strip()):
+                    cell.notes.append("«т» в марке «Ст» прочитана латиницей; raw=%r" % cell.text)
+                    cell.text = _STEEL_ST_RE.sub("Ст", cell.text.strip())
             if role in ("unknown", ""):
                 # Ячейки без роли — штамп и подписи листа: курсив сворачивается в
                 # кириллицу, типовые подписи штампа приводятся к канону.
@@ -817,6 +1103,18 @@ def normalize_cell(cell: Cell, role: str) -> Cell:
                 cell.notes.append("лишний пробел внутри дробной части; raw=%r" % cell.text)
                 cell.text = split.group(1) + split.group(2)
                 cell.requires_review = True
+            trail = _TRAILING_SEP_RE.fullmatch(cell.text.strip())
+            if trail:
+                # «9.» — на чертеже так и напечатано (KM_GARAZH); это 9
+                cell.notes.append("разделитель без дробной части; raw=%r" % cell.text)
+                cell.text = trail.group(1)
+            if _SPLIT_INT_RE.fullmatch(cell.text.strip()):
+                compact = re.sub(r"[\s\u00a0\u2009]+", "", cell.text.strip())
+                alt = re.sub(r"[\s\u00a0\u2009]+", "", (getattr(cell, "alt_text", "") or "").strip())
+                if alt and alt == compact:
+                    cell.notes.append("пробел внутри числа, второй движок прочитал без него; raw=%r" % cell.text)
+                    cell.text = compact
+                    cell.requires_review = True
             dbl = _DOUBLE_SEP_RE.fullmatch(cell.text.strip())
             if dbl:
                 cell.notes.append("двойной десятичный разделитель; raw=%r" % cell.text)
@@ -860,6 +1158,9 @@ def normalize_cell(cell: Cell, role: str) -> Cell:
 
     if role == "profile_size":
         if cell.source in RECOGNISED_SOURCES:
+            if _SHEET_DASH_T_RE.match(cell.text.strip()):
+                cell.notes.append("снят значок листа «—» перед толщиной; raw=%r" % cell.text)
+                cell.text = _SHEET_DASH_T_RE.sub("", cell.text.strip())
             plus = _PLUS_THICKNESS_RE.fullmatch(cell.text.strip())
             if plus:
                 cell.notes.append("«+» перед толщиной листа прочитано вместо «t»; raw=%r" % cell.text)

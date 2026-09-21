@@ -14,8 +14,22 @@
       />
     </td>
     <td class="pdr__idx">{{ index }}</td>
-    <td>
-      <div>{{ row.profileMark || row.profileRaw || row.name || "—" }}</div>
+    <td @mousedown.stop>
+      <!-- Номер профиля вводится вручную: по мере набора — подходящие марки
+           справочника с видом профиля и массой 1 м. Выбор из списка подставляет
+           марку и массу; свой текст, которого в справочнике нет, тоже принимается. -->
+      <ProfileMarkInput
+        v-model="markDraft"
+        compact
+        :prefer-category="category"
+        :placeholder="row.profileRaw || 'марка'"
+        :aria-label="`Номер профиля ${label}`"
+        @pick="$emit('set-mark', row, $event, $event.mark)"
+        @commit="$emit('set-mark', row, null, $event)"
+      />
+      <div v-if="row.profileRaw && row.profileRaw !== row.profileMark" class="pdr__raw" :title="`В спецификации: ${row.profileRaw}`">
+        {{ row.profileRaw }}
+      </div>
       <!-- OCR не разобрал букву серии двутавра («2011»): варианты по ГОСТ 26020,
            с массой 1 м по справочнику там, где марка найдена. Клик подставляет
            марку, массу и длину и снимает список. -->
@@ -134,12 +148,14 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref, watch } from "vue";
 import HeatingSidesPicker from "./HeatingSidesPicker.vue";
+import ProfileMarkInput from "./ProfileMarkInput.vue";
 import StatusTag from "./StatusTag.vue";
 import { bearingTypeChoices } from "@/utils/bearingTypes";
 import { coatingTypeChoices } from "@/utils/coatingTypes";
-import { profileFamilyLabel } from "@/utils/ocrImport";
+import { profileCategory, profileFamilyLabel } from "@/utils/ocrImport";
+import type { ProfileOption } from "@/utils/profileSuggest";
 import { constructionLabel as formatConstruction } from "@/utils/constructionLabel";
 import { fireLimitChoices } from "@/utils/fireLimits";
 import { num } from "@/utils/format";
@@ -162,6 +178,8 @@ defineEmits<{
   (e: "bearing", row: OgzRow, value: string): void;
   (e: "coating", row: OgzRow, value: string): void;
   (e: "pick-mark", row: OgzRow, candidate: ProfileCandidate): void;
+  /** Марка введена вручную: option — запись справочника (или null для своего текста), text — что в поле. */
+  (e: "set-mark", row: OgzRow, option: ProfileOption | null, text: string): void;
   (e: "edit", row: OgzRow): void;
   (e: "copy", row: OgzRow): void;
   (e: "remove", row: OgzRow): void;
@@ -169,6 +187,22 @@ defineEmits<{
 
 const label = computed(() =>
   `${props.row.profileMark || props.row.profileRaw || "профиль"} ${props.row.construction || ""}`.trim()
+);
+
+// Черновик номера профиля: строка — prop, править её напрямую нельзя;
+// изменение уходит наверх событием set-mark и возвращается через patch.
+const markDraft = ref(props.row.profileMark || "");
+watch(
+  () => props.row.profileMark,
+  (v) => {
+    markDraft.value = v || "";
+  }
+);
+
+// Вид профиля строки — чтобы в подсказках первыми шли марки того же вида
+// («140х5» есть и у квадратной, и у круглой трубы).
+const category = computed(() =>
+  profileCategory(props.row.name || "", props.row.gostProfile || "", props.row.profileRaw || props.row.profileMark || "")
 );
 
 // Вид профиля (двутавр, швеллер, уголок, труба…) — из наименования группы
@@ -244,6 +278,13 @@ const needsAttention = computed(
 
 .pdr__missing {
   color: var(--content-system-negative);
+}
+
+.pdr__raw {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--content-secondary-enabled);
+  white-space: nowrap;
 }
 
 .pdr__cands {

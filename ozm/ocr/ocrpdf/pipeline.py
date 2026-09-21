@@ -28,7 +28,8 @@ from .fontfix import build_font_repairs, looks_broken
 from .glyph_ocr import GlyphLayer
 from .models import PageInfo, Table
 from .ocr_backends import pick_backend
-from .normalizer import fill_positions, fix_profile_series, fix_sheet_thickness
+from .normalizer import (apply_mass_unit, fill_positions, fix_profile_series, fix_sheet_thickness,
+                         resolve_mass_unit)
 from .structure import (Column, LogicalRow, assign_roles, build_rows, classify_table,
                         detect_header_rows, find_titles, group_context,
                         normalize_grid, refine_structure, split_sections)
@@ -229,6 +230,8 @@ def process_page(doc: fitz.Document, index: int, opts: Options,
                     n_ruling_lines=len(h) + len(v), n_vector_glyphs=len(layer.comps),
                     n_text_chars=len(raw_text))
     info.notes.append("grid source: %s" % grid_source)
+    if layer.lowres_note:
+        info.notes.append(layer.lowres_note)
     for name, rep in repairs.items():
         if rep.ok:
             info.notes.append("font %s: encoding repaired via %s %s"
@@ -394,6 +397,10 @@ def process_page(doc: fitz.Document, index: int, opts: Options,
         # Нормализация ДО сборки строк: разбор merged-ячейки с несколькими
         # номерами позиций опирается на уже разобранные значения.
         normalize_grid(grid, cols, header_rows)
+        # «Общая масса, кг»: числа делим на 1000, чтобы в калькулятор ушли тонны;
+        # при противоречивых подписях шапки единицу решает порядок чисел
+        resolve_mass_unit(grid, cols, header_rows)
+        kg_cells = apply_mass_unit(grid, cols, header_rows)
         rows = build_rows(grid, cols, header_rows, blk.n_rows)
         group_context(rows)
         # «116» / «10» в группе листов — это t16 / t10: у чертёжного «t» OCR теряет
@@ -454,6 +461,16 @@ def process_page(doc: fitz.Document, index: int, opts: Options,
             # пометка части относится только к самой спецификации
             if part and sec_kind == "spec_main":
                 table.part = part
+            if kg_cells and sec_kind != "generic":
+                table.notes.append("массы на листе подписаны в кг — в результате переведены в т (%d ячеек)" % kg_cells)
+            elif sec_kind == "spec_main" and not kg_cells:
+                big = [r.cells["total_mass"].normalized_value for r in sec_rows
+                       if "total_mass" in r.cells and isinstance(r.cells["total_mass"].normalized_value, (int, float))]
+                if big and max(big) >= 2000:
+                    # спецификация металлопроката на 2000+ т — редкость, а вот
+                    # килограммы без единицы в шапке встречаются
+                    table.notes.append("общая масса %.0f — возможно, массы на листе в кг, а единица в шапке "
+                                       "не прочиталась; проверьте перед импортом" % max(big))
             # Арифметику проверяем только там, где известен смысл колонок.
             # допуск — под точность чисел на этом листе (одна десятая или сотые)
             sec_tol = tol.for_decimals(mass_decimals(sec_rows, cols))

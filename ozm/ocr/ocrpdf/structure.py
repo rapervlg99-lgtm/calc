@@ -82,9 +82,11 @@ PROFILE_GROUP_CANON = [
     "Прокат горячекатаный",
     "Сталь листовая горячекатаная",
     "Листы стальные",
+    "Листы стальные просечно-вытяжные",
     "Профили стальные листовые гнутые с трапецеидальными гофрами для строительства",
     "Профили стальные листовые гнутые для строительства",
     "Трубы стальные электросварные прямошовные",
+    "Трубы электросварные прямошовные", "Трубы стальные электросварные",
     "Труба квадратная", "Трубы квадратные", "Трубы стальные квадратные",
     "Труба прямоугольная", "Трубы стальные прямоугольные",
     "Трубы стальные бесшовные горячедеформированные",
@@ -245,9 +247,15 @@ def canonical_header(text: str) -> tuple[str, float]:
     return _best_canon(text, HEADER_CANON, HEADER_MIN_RATIO, HEADER_MIN_SKEL)
 
 
+def is_service_profile_text(text: str) -> bool:
+    """Служебная строка колонки наименования («Итого», «Примечания…», «Масса
+    металла по маркам») — словарь групп и подсказки по стандарту её не трогают."""
+    return any(m in sk for sk in skeletons(text) for m in _SKIP_PROFILE_CANON)
+
+
 def canonical_profile_group(text: str) -> tuple[str, float]:
     """Каноническое наименование группы профиля, если OCR достаточно близок."""
-    if any(m in sk for sk in skeletons(text) for m in _SKIP_PROFILE_CANON):
+    if is_service_profile_text(text):
         return "", 0.0
     return _best_canon(text, PROFILE_GROUP_CANON, PROFILE_MIN_RATIO, PROFILE_MIN_SKEL)
 
@@ -325,6 +333,7 @@ def refine_structure(grid: dict[tuple[int, int], Cell], n_rows: int, n_cols: int
     номеров находится, подписи шапки приводятся к канону, роли пересчитываются.
     """
     header_rows, numbering = detect_header_rows(grid, n_rows, n_cols)
+    unit = header_mass_unit(grid, header_rows, numbering, n_cols)
     seen: set[int] = set()
     for r in header_rows:
         if numbering is not None and r == numbering:
@@ -352,7 +361,46 @@ def refine_structure(grid: dict[tuple[int, int], Cell], n_rows: int, n_cols: int
             if ratio >= 0.88:
                 cell.requires_review = False
     cols = assign_roles(grid, header_rows, numbering, n_cols, block)
+    for col in cols:
+        if col.role in ("element_mass", "total_mass"):
+            col.unit = unit
     return header_rows, cols
+
+
+# Единица массы в подписи шапки: «Общая масса, т» / «…, кг». Килограммы OCR
+# читает как «кг», «Ке», «K2», «kg», «кz». Проверяется ДО канонизации подписей:
+# словарь шапки сворачивает всё в «Общая масса, т» и след единицы пропадает.
+_UNIT_KG_RE = re.compile(r"масс\w*(кг|ке|kg|кz|к2|k2|kz|кr|kr)$")
+_UNIT_T_RE = re.compile(r"масс\w*(т|m|t)$")
+
+
+def header_mass_unit(grid: dict[tuple[int, int], Cell], header_rows: list[int],
+                     numbering: int | None, n_cols: int) -> str:
+    """«кг», если хоть одна подпись масс в шапке заканчивается килограммами и ни
+    одна — тоннами; «кг?», если подписи противоречат друг другу (Obshchaga_KM:
+    «…по элементам конструкций, т» и «Общая масса, кг» на одном листе — решает
+    порядок чисел, см. resolve_mass_unit); иначе «т»."""
+    kg = tonnes = 0
+    seen: set[int] = set()
+    for r in header_rows:
+        if numbering is not None and r == numbering:
+            continue
+        for c in range(n_cols):
+            cell = grid.get((r, c))
+            if cell is None or id(cell) in seen or not cell.text.strip():
+                continue
+            seen.add(id(cell))
+            for sk in skeletons(cell.text):
+                if "масс" not in sk:
+                    continue
+                if _UNIT_KG_RE.search(sk):
+                    kg += 1
+                elif _UNIT_T_RE.search(sk):
+                    tonnes += 1
+                break
+    if kg and tonnes:
+        return "кг?"
+    return "кг" if kg else "т"
 
 
 @dataclass
@@ -363,6 +411,7 @@ class Column:
     letter: str = ""          # номер колонки из служебной строки листа
     bbox: tuple = (0, 0, 0, 0)
     element: str = ""         # для element_mass — название элемента конструкции
+    unit: str = ""            # для масс: «т» (по умолчанию) или «кг», как подписано в шапке
 
 
 @dataclass
@@ -397,7 +446,11 @@ def detect_header_rows(grid: dict[tuple[int, int], Cell], n_rows: int,
         # Не требуем 70% заполнения: при объединённых ячейках шапки часть
         # номеров пропадает («1 2» было в одной клетке, после шва колонок
         # остаётся «1;2;3;4;;6»). Достаточно трёх номеров начиная с 1.
-        if len(ints) >= 3 and min(ints) == 1 and len(set(ints)) >= 3:
+        # «1» в первой клетке нередко не читается (растр низкого разрешения),
+        # тогда строка начинается с 2: достаточно трёх подряд идущих номеров
+        uniq = sorted(set(ints))
+        starts_at_two = len(uniq) >= 3 and uniq[0] == 2 and uniq[1] == 3 and uniq[2] == 4
+        if len(ints) >= 3 and len(uniq) >= 3 and (uniq[0] == 1 or starts_at_two):
             numbering = r
             break
     if numbering is None:
@@ -601,13 +654,17 @@ def assign_roles(grid: dict[tuple[int, int], Cell], header_rows: list[int],
     if element_range:
         after = element_range[1] + 1
         last = n_cols - 1
-        if after == last and last >= 0 and cols[last].role in ("", "unknown"):
-            sks = skeletons(cols[last].title)
+        # общая масса — сразу за блоком масс: последняя колонка либо
+        # предпоследняя, когда за ней «Площадь окрашиваемой поверхности»
+        total_at = after if (after == last or (after == last - 1 and cols[last].role == "area")) else None
+        if total_at is not None and cols[total_at].role in ("", "unknown"):
+            sks = skeletons(cols[total_at].title)
             sk = sks[0]
-            if (not sk) or any("масс" in x for x in sks) or sk in ("т", "m", "ш", "п"):
-                cols[last].role = "total_mass"
+            if ((not sk) or any("масс" in x for x in sks) or sk in ("т", "m", "ш", "п")
+                    or _fuzzy_mass_title(sks)):
+                cols[total_at].role = "total_mass"
                 if not any("общая" in x for x in sks):
-                    cols[last].title = "Общая масса, т"
+                    cols[total_at].title = "Общая масса, т"
         # «№ п.п.» — единственная колонка между размером профиля и массами по
         # элементам; её подпись чертёжным шрифтом OCR читает как «0?,,?».
         first = element_range[0]
@@ -718,6 +775,19 @@ def fold_mixed_script(text: str) -> str:
     if _OTHER_LETTER.search(folded) or _LATIN_RUN.search(folded):
         return text
     return folded
+
+
+def _fuzzy_mass_title(sks) -> bool:
+    """Подпись «Общая масса, т», прочитанная с ошибками внутри слова
+    («Maced, т» → «масеdт»): сравнивается с эталонами нечётко."""
+    from difflib import SequenceMatcher
+    for sk in sks:
+        if not (4 <= len(sk) <= 14):
+            continue
+        for ref in ("массат", "общаямассат", "массакг"):
+            if SequenceMatcher(None, sk, ref).ratio() >= 0.66:
+                return True
+    return False
 
 
 def _close_prefix(sk: str, key: str, min_ratio: float = 0.8) -> bool:

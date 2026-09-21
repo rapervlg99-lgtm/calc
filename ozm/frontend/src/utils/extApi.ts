@@ -202,13 +202,36 @@ export async function getExtPrefill(id: string): Promise<PrefillPayload> {
  * (не встречается в нескольких категориях). Если /ext недоступен (OCR выключен
  * флагом) — пустая карта, импорт из OCR посчитает массу по размерам сечения.
  */
+export interface ProfileCatalogItem {
+  mark: string
+  massPerMeter: number
+  category?: string
+}
+
+let catalogPromise: Promise<ProfileCatalogItem[]> | null = null
+
+/**
+ * Плоский список справочника масс (/ext/profiles): марка, категория, кг/м.
+ * Грузится один раз на сессию — по нему строятся подсказки при ручном вводе
+ * марки и карта fetchMassHandbook. Если /ext недоступен — пустой список.
+ */
+export function fetchProfileCatalog(): Promise<ProfileCatalogItem[]> {
+  if (!catalogPromise) {
+    catalogPromise = api
+      .get<ProfileCatalogItem[]>('/ext/profiles', { timeout: 15000 })
+      .then(({ data }) => (Array.isArray(data) ? data : []))
+      .catch(() => {
+        catalogPromise = null // в следующий раз попробуем снова
+        return [] as ProfileCatalogItem[]
+      })
+  }
+  return catalogPromise
+}
+
 export async function fetchMassHandbook(): Promise<Map<string, number>> {
   const out = new Map<string, number>()
   try {
-    const { data } = await api.get<{ mark: string; massPerMeter: number; category?: string }[]>(
-      '/ext/profiles',
-      { timeout: 15000 }
-    )
+    const data = await fetchProfileCatalog()
     const cats = new Map<string, Set<string>>()
     for (const p of data || []) {
       const key = handbookKey(p.mark)

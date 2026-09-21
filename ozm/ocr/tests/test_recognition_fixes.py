@@ -417,3 +417,343 @@ def test_rotated_label_keeps_line_order():
          TextLine(text="Связи,", bbox=(14, 2, 50, 18), direction=(1, 0))]
     lines = _group_words(w)
     assert [" ".join(x.text for x in L) for L in lines] == ["Связи,", "распорки"]
+
+
+# ---- лист «01-П_02.08.2015-2-КМ1 лист 2» (2026-09-16): чертёжный курсив ISOCPEUR --------
+
+def _rows_in_group(group_text, sizes):
+    group = Cell(row=3, col=0, text=group_text, source="ocr", row_span=len(sizes))
+    return [LogicalRow(row=3 + i, kind="data", cells={"profile_group": group,
+            "profile_size": Cell(row=3 + i, col=2, text=size, source="ocr", alt_text=alt)})
+            for i, (size, alt) in enumerate(sizes)]
+
+
+def test_ibeam_series_digit_five_and_alt_engine():
+    """«2051» — это 20Б1 («Б» прочитана пятёркой, высоты 205 не бывает), а не
+    двутавр 205 с потерянной буквой; чтение второго движка с буквой серии — главнее."""
+    from ocrpdf.normalizer import fix_profile_series
+    rows = _rows_in_group("Двутавры стальные горячекатаные", [
+        ("2051", "Т20Б1"), ("1651", "T1661"), ("3051", "3051"), ("301", "I30Ш1"), ("2551", ""),
+        ("2011", ""), ("352", "")])
+    fix_profile_series(rows)
+    sizes = [r.cells["profile_size"] for r in rows]
+    assert [s.text for s in sizes] == ["20Б1", "16Б1", "30Б1", "30Ш1", "25Б1", "2011", "352"]
+    assert all(s.requires_review for s in sizes)
+    assert sizes[0].candidates == [] and sizes[5].candidates == ["20Б1", "20Ш1", "20К1"]
+    assert sizes[6].candidates == ["35Б2", "35Ш2", "35К2"]
+
+
+def test_channel_series_digit_seven():
+    """«227»/«167» в швеллерах — 22П/16П: «П» прочитана семёркой. Высота сверяется
+    с ГОСТ 8240 («237» не трогаем), второй движок с буквой — главнее."""
+    from ocrpdf.normalizer import fix_profile_series
+    rows = _rows_in_group("Швеллеры стальные горячекатаные", [
+        ("227", "[221"), ("167", "[16П"), ("237", ""), ("27", ""), ("407", "")])
+    fix_profile_series(rows)
+    assert [r.cells["profile_size"].text for r in rows] == ["22П", "16П", "237", "27", "40П"]
+    assert rows[0].cells["profile_size"].requires_review is True
+    assert any("вторым движком" in n for n in rows[1].cells["profile_size"].notes)
+
+
+def test_sheet_dash_glyph_before_thickness():
+    """«—t16», «—+20», «—14»: значок листа по ЕСКД перед толщиной. Перед «t»/«+»
+    снимается сразу, одинокое число после тире — только в листовой группе."""
+    from ocrpdf.normalizer import fix_sheet_thickness
+    assert normalize_cell(Cell(row=1, col=2, text="-t16", source="ocr"), "profile_size").text == "t16"
+    assert normalize_cell(Cell(row=1, col=2, text="-+20", source="ocr"), "profile_size").text == "t20"
+    assert normalize_cell(Cell(row=1, col=2, text="—t8", source="ocr"), "profile_size").text == "t8"
+    assert normalize_cell(Cell(row=1, col=2, text="-t16", source="text_layer"), "profile_size").text == "-t16"
+    rows = _rows_in_group("Прокат листовой\nГОСТ 19903-74", [("-14", "-14"), ("-10", "-110"), ("-t9", "-19"), ("t8", "")])
+    assert fix_sheet_thickness(rows) == 3
+    sizes = [r.cells["profile_size"] for r in rows]
+    assert [s.text for s in sizes] == ["t14", "t10", "t9", "t8"]
+    # число после тире взято целиком — без пометки; «-110» → t10 — догадка, на проверку
+    assert sizes[0].requires_review is False and sizes[1].requires_review is False
+    assert sizes[2].requires_review is False
+    rows3 = _rows_in_group("Прокат листовой", [("-110", ""), ("116", "")])
+    assert fix_sheet_thickness(rows3) == 2
+    assert [r.cells["profile_size"].text for r in rows3] == ["t10", "t16"]
+    assert all(r.cells["profile_size"].requires_review for r in rows3)
+    # вне листовой группы тире с числом не трогаем
+    rows2 = _rows_in_group("Двутавры стальные", [("-14", "")])
+    assert fix_sheet_thickness(rows2) == 0 and rows2[0].cells["profile_size"].text == "-14"
+
+
+def test_expanded_metal_sheet_mark():
+    """«NВ-506» / «HB-406» в листах — просечно-вытяжной лист ПВ."""
+    from ocrpdf.normalizer import fix_profile_series
+    rows = _rows_in_group("Листы стальные просечно-вытяжные\nТУ 36.26.11-5-89",
+                          [("NВ-506", "ПВ-506"), ("HB-406", ""), ("ПВ-508", "")])
+    assert fix_profile_series(rows) == 2
+    assert [r.cells["profile_size"].text for r in rows] == ["ПВ-506", "ПВ-406", "ПВ-508"]
+
+
+def test_profile_group_follows_sortament_standard():
+    """Номер ГОСТ/ТУ читается надёжнее слов: он решает вид профиля, когда словарь
+    подобрал не то («Трубы квадратные» при ГОСТ 10704) или подобрать нечего
+    («Листы стальные» + ТУ 36.26.11 — просечно-вытяжные; короткое «Прокат листовой»)."""
+    from ocrpdf.normalizer import group_by_standard
+    def grp(text):
+        return normalize_cell(Cell(row=1, col=0, text=text, source="ocr", confidence=0.9), "profile_group")
+    c = grp("Трубы\nэлектросварные\nГОСТ 10704-91")
+    assert c.text.startswith("Трубы стальные электросварные") and c.requires_review is False
+    c = grp("Трубы квадратные\nГОСТ 10704-91")
+    assert c.text == "Трубы стальные электросварные прямошовные\nГОСТ 10704-91" and c.requires_review is True
+    assert any("расходится со стандартом" in n for n in c.notes)
+    c = grp("Уголки стальные горячекатаные\nравнополочные\nГОСТ 8510-86")
+    assert c.text == "Уголки стальные горячекатаные неравнополочные\nГОСТ 8510-86" and c.requires_review is True
+    c = grp("Уголки стальные горячекатаные\nравнополочные\nГОСТ 8509-93")
+    assert c.text == "Уголки стальные горячекатаные равнополочные\nГОСТ 8509-93" and c.requires_review is False
+    # словарь ошибся в сторону «неравнополочные» (file-14), стандарт 8509 возвращает — с пометкой
+    c = grp("Уголки стальные\nZОРАТЕК ОМ СНАВIС\nрайнополочные ГОСТ 8509-93")
+    assert c.text == "Уголки стальные горячекатаные равнополочные\nГОСТ 8509-93" and c.requires_review is True
+    # менее точное имя уточняется по стандарту без пометки (Estakada: «Прокат горячекатаный»)
+    c = grp("листовой Прокат.\nгорячекатаный\nгост.\n19903-2015")
+    assert c.text == "Прокат листовой горячекатаный\nГОСТ 19903-2015" and c.requires_review is False
+    assert any("уточнено по стандарту" in n for n in c.notes)
+    c = grp("Листы стальные |\nТУ 36.26.11-5-89")
+    assert c.text == "Листы стальные просечно-вытяжные\nТУ 36.26.11-5-89"
+    c = grp("[Прокат листовой |\nГОСТ 19903-74")
+    assert c.text == "Прокат листовой горячекатаный\nГОСТ 19903-74"
+    assert any("артефакт линовки перед наименованием" in n for n in c.notes)
+    # общая группа ГОСТ 30245 согласна и с «квадратные», и с «прямоугольные»; размер сохраняется
+    c = grp("Труба квадратная 120х120х6\nГОСТ 30245-2003")
+    assert c.text == "Труба квадратная 120х120х6\nГОСТ 30245-2003"
+    # два разных стандарта в одной ячейке — подсказки нет
+    assert group_by_standard(["ГОСТ 8509-93", "ГОСТ 8510-86"]) is None
+    assert group_by_standard(["ГОСТ Р 57837-2017"])[0].startswith("Двутавры")
+    # без стандарта словарь работает как раньше
+    assert grp("Швеллеры стальные горячекатаные").text == "Швеллеры стальные горячекатаные"
+    # примечание к таблице ссылается на ГОСТ, но группой не является (file-4)
+    note = ("Примечания:\n1. Окончательная масса металла подлежит уточнению при разработке КМД.\n"
+            "2. Листовой прокат по ГОСТ 19903-2015, сталь по ГОСТ 27772-2015.")
+    assert grp(note).text == note
+    long_name = "Прокат листовой горячекатаный повышенной точности для ответственных сварных конструкций зданий и сооружений\nГОСТ 19903-2015"
+    assert grp(long_name).text.startswith("Прокат листовой горячекатаный")
+
+
+def test_steel_grade_five_as_s_and_junk_line():
+    """«5245» — С245 («С» прочитана пятёркой); строка из одной буквы под маркой — артефакт."""
+    c = normalize_cell(Cell(row=1, col=1, text="5245\nГОСТ 27772-88\nэ", source="ocr"), "steel_grade")
+    assert c.text.startswith("С245") and "э" not in c.text and "ГОСТ 27772-88" in c.text
+    # текстовый слой не трогаем
+    c = normalize_cell(Cell(row=1, col=1, text="5245", source="text_layer"), "steel_grade")
+    assert c.text == "5245"
+    # «Сm20» — углеродистая Ст20
+    assert normalize_cell(Cell(row=1, col=1, text="Cm20", source="ocr"), "steel_grade").text == "Ст20"
+    assert normalize_cell(Cell(row=1, col=1, text="Ст3сп", source="ocr"), "steel_grade").text == "Ст3сп"
+
+
+# ---- пять листов из Telegram (2026-09-18): растр из Word и вектор А1 ---------------------
+
+def test_header_mass_unit_kg_and_conversion():
+    """«Общая масса, кг» (растр читает «масса, Ке»): колонки масс получают единицу
+    «кг», значения делятся на 1000, текст ячейки остаётся как на чертеже. Допуск
+    арифметики считается по трём лишним знакам."""
+    from ocrpdf.normalizer import apply_mass_unit
+    from ocrpdf.structure import header_mass_unit
+    from ocrpdf.validator import mass_decimals
+    grid = {(0, 4): Cell(row=0, col=4, text="Масса металла по элементам конструкций, кг", source="ocr", col_span=2),
+            (0, 8): Cell(row=0, col=8, text="масса,\nКе", source="ocr"),
+            (3, 8): Cell(row=3, col=8, text="13634.00", source="ocr", value_kind="number", normalized_value=13634.0),
+            (3, 4): Cell(row=3, col=4, text="8815", source="ocr", value_kind="number", normalized_value=8815.0)}
+    assert header_mass_unit(grid, [0, 1], None, 9) == "кг"
+    cols = [Column(index=4, role="element_mass", title="Колонны", element="Колонны", unit="кг"),
+            Column(index=8, role="total_mass", title="Общая масса, т", unit="кг")]
+    assert apply_mass_unit(grid, cols, [0, 1]) == 2
+    assert grid[(3, 8)].normalized_value == 13.634 and grid[(3, 8)].text == "13634.00"
+    assert grid[(3, 4)].normalized_value == 8.815
+    assert any("переведена в т" in n for n in grid[(3, 8)].notes)
+    row = LogicalRow(row=3, kind="data", cells={column_key(cols[0]): grid[(3, 4)], "total_mass": grid[(3, 8)]})
+    assert mass_decimals([row], cols) == 5          # «13634.00» → два знака + три
+    # тонны и смешанные подписи — единица по умолчанию
+    grid_t = {(0, 8): Cell(row=0, col=8, text="Общая масса,\nт", source="ocr")}
+    assert header_mass_unit(grid_t, [0], None, 9) == "т"
+    # подписи противоречат друг другу (Obshchaga_KM): «кг?», решает порядок чисел
+    from ocrpdf.normalizer import resolve_mass_unit
+    grid_mix = {(0, 4): Cell(row=0, col=4, text="Масса металла по элементам, т", source="ocr"),
+                (0, 8): Cell(row=0, col=8, text="масса, кг", source="ocr"),
+                (3, 8): Cell(row=3, col=8, text="13634", source="ocr", value_kind="number", normalized_value=13634.0)}
+    assert header_mass_unit(grid_mix, [0], None, 9) == "кг?"
+    cols_q = [Column(index=4, role="element_mass", title="Колонны", element="Колонны", unit="кг?"),
+              Column(index=8, role="total_mass", title="Общая масса, т", unit="кг?")]
+    assert resolve_mass_unit(grid_mix, cols_q, [0]) == "кг" and cols_q[0].unit == "кг"
+    grid_mix[(3, 8)].normalized_value = 136.34
+    for c in cols_q:
+        c.unit = "кг?"
+    assert resolve_mass_unit(grid_mix, cols_q, [0]) == "т"
+    cols_t = [Column(index=8, role="total_mass", title="Общая масса, т")]
+    assert apply_mass_unit(grid, cols_t, [0]) == 0
+
+
+def test_numbering_row_without_first_cell():
+    """Строка нумерации граф «_ 2 3 4 5 6 7 8 9»: единица в первой клетке не
+    прочиталась на растре. Пропуски внутри («1 2 3 4 _ 6») по-прежнему допустимы,
+    а строка данных «2 … 4» без третьего номера — нет."""
+    from ocrpdf.structure import detect_header_rows
+    grid = {}
+    for c, txt in enumerate(["", "2", "3", "4", "5", "6", "7", "8", "9"]):
+        grid[(2, c)] = Cell(row=2, col=c, text=txt)
+    assert detect_header_rows(grid, 10, 9) == ([0, 1, 2], 2)
+    grid2 = {(2, 1): Cell(row=2, col=1, text="2"), (2, 3): Cell(row=2, col=3, text="4"),
+             (2, 5): Cell(row=2, col=5, text="6")}
+    assert detect_header_rows(grid2, 10, 9)[1] is None
+
+
+def test_total_mass_role_fuzzy_and_before_area():
+    """«Общая масса, т» правее блока масс получает роль и когда подпись прочитана
+    «Maced, т», и когда за ней стоит «Площадь окрашиваемой поверхности»."""
+    from ocrpdf.structure import _fuzzy_mass_title, skeletons
+    assert _fuzzy_mass_title(skeletons("Maced, т")) is True
+    assert _fuzzy_mass_title(skeletons("Оdwаа Масса, m")) is True
+    assert _fuzzy_mass_title(skeletons("Прогоны")) is False
+    assert _fuzzy_mass_title(skeletons("Площадь окрашиваемой поверхности, м2")) is False
+
+
+def test_channel_bare_number_confirmed_by_alt_engine():
+    """«[16П» прочитано «[16» → «16»; второй движок видел букву («c16n», «[ 16nl»),
+    ставим П. Без подтверждения («|[2%П») голое число остаётся: для калькулятора
+    «24» — допустимое обозначение швеллера."""
+    from ocrpdf.normalizer import fix_profile_series
+    rows = _rows_in_group("Швеллеры стальные горячекатаные", [("16", "c16n"), ("16", "[ 16nl"), ("24", "|[2%П"), ("6,5", "6,5П")])
+    assert fix_profile_series(rows) == 3
+    assert [r.cells["profile_size"].text for r in rows] == ["16П", "16П", "24", "6,5П"]
+
+
+def test_ibeam_glued_glyph_one():
+    """«I23Ш1» без пробела → «123Ш1»: высоты 123 нет, 23 есть — единица это значок."""
+    from ocrpdf.normalizer import fix_profile_series
+    rows = _rows_in_group("Двутавры стальные горячекатаные с параллельными гранями полок",
+                          [("123Ш1", "123Ш1"), ("135Ш1", ""), ("100Б1", ""), ("120Б1", "")])
+    fix_profile_series(rows)
+    # 100Б1 и 120Б1 — настоящие высоты 100 и 120 (120 в сортаменте нет, но 20 есть → снимаем)
+    assert [r.cells["profile_size"].text for r in rows] == ["23Ш1", "35Ш1", "100Б1", "20Б1"]
+
+
+def test_split_integer_joined_only_with_alt_confirmation():
+    """«4 72» в колонке масс: одна цифра слева — не потерянная запятая. Склейка
+    только если второй движок дал «472»; при «872» ячейка остаётся спорным текстом."""
+    c = normalize_cell(Cell(row=10, col=5, text="4 72", source="ocr", alt_text="472"), "element_mass")
+    assert c.normalized_value == 472.0 and c.requires_review is True
+    c = normalize_cell(Cell(row=13, col=8, text="4 12.00", source="ocr", alt_text="412.00"), "total_mass")
+    assert c.normalized_value == 412.0
+    c = normalize_cell(Cell(row=10, col=5, text="4 72", source="ocr", alt_text="872"), "element_mass")
+    assert c.normalized_value is None and c.value_kind == "text"
+    # «23857 49» — потерянная запятая, как раньше
+    c = normalize_cell(Cell(row=10, col=5, text="23857 49", source="ocr", alt_text="2385749"), "element_mass")
+    assert c.normalized_value == 23857.49
+    # «9.» — разделитель без дробной части (так напечатано на KM_GARAZH)
+    c = normalize_cell(Cell(row=4, col=4, text="9.", source="ocr", alt_text="9."), "element_mass")
+    assert c.normalized_value == 9.0 and c.value_kind == "number"
+
+
+def test_bent_profile_prefix():
+    """«Гн.100х5» в гнутых замкнутых профилях: «Г» потеряна, «н» латиницей — «H.100x5»."""
+    from ocrpdf.normalizer import fix_profile_series
+    rows = _rows_in_group("Профили стальные гнутые замкнутые сварные квадратные и прямоугольные\nГОСТ 30245-2012",
+                          [("Н.100х5", "|Гн100хо"), ("H160x5", ""), ("Гн.100х5", ""), ("100х5", "")])
+    assert fix_profile_series(rows) == 2
+    assert [r.cells["profile_size"].text for r in rows] == ["Гн.100х5", "Гн.160x5", "Гн.100х5", "100х5"]
+    # профнастил «Н75-750-0,8» в группе гнутых профилей с гофрами — «Н» настоящая (file-37, file-14)
+    rows2 = _rows_in_group("Профили стальные листовые гнутые с трапецеидальными гофрами\nГОСТ 24045-2016",
+                           [("Н75-750-0,8", ""), ("H60-845-0,7", "")])
+    assert fix_profile_series(rows2) == 0
+    assert [r.cells["profile_size"].text for r in rows2] == ["Н75-750-0,8", "H60-845-0,7"]
+
+
+def test_square_tube_glyph_junk_and_side_sanity():
+    """Растр из Word («Рама для вентилятора»): «□120х5» → «/20х5», «□80х5» → «080х5»,
+    «□100х5» → «700х5». Черта и ноль перед размером снимаются; сторона вне
+    сортамента (700, 20) помечается — молча такие размеры в калькулятор не идут."""
+    from ocrpdf.normalizer import fix_profile_series, fix_sheet_thickness
+    rows = _rows_in_group("Профиль стальной гнутый замкнутый сварной квадратный\nГОСТ 30245-2012",
+                          [("/20х5", "OS"), ("080х5", "[12"), ("060х5", ""), ("700х5", ""), ("140х5", "")])
+    fix_profile_series(rows)
+    sizes = [r.cells["profile_size"] for r in rows]
+    assert [s.text for s in sizes] == ["20х5", "80х5", "60х5", "700х5", "140х5"]
+    assert sizes[0].requires_review and sizes[3].requires_review        # 20 и 700 — не стороны ГОСТ 30245
+    assert sizes[1].requires_review and not sizes[4].requires_review     # снятый ноль — на проверку, 140 — норма
+    # «D40х40х4» (Estakada): латинская D вместо «□» снимается без пометки
+    rows3 = _rows_in_group("Трубы стальные квадратные\nГОСТ 30245-2003", [("D40х40х4", ""), ("口 100х5", "")])
+    fix_profile_series(rows3)
+    assert [r.cells["profile_size"].text for r in rows3] == ["40х40х4", "100х5"]
+    assert not any(r.cells["profile_size"].requires_review for r in rows3)
+    assert any("не встречается" in n for n in sizes[3].notes)
+    # «δ=4 мм» растром: «5=4ММ», «6=8 НМ», «d=10 мм» → t4, t8, t10 в листовой группе
+    rows2 = _rows_in_group("Сталь листовая горячекатаная\nГОСТ 19903-2015", [("5=4ММ", "d=4 мы"), ("6=8 НМ", ""), ("d=10 мм", ""), ("t6", "")])
+    assert fix_sheet_thickness(rows2) == 3
+    assert [r.cells["profile_size"].text for r in rows2] == ["t4", "t8", "t10", "t6"]
+
+
+# ---- скриншот в PDF из Word («Рама для вентилятора», 96 dpi) -----------------------------
+
+def _page_with_image(px: int, page_pt: float = 400.0, rotate: int = 0):
+    """Страница page_pt×page_pt pt с картинкой px×px, растянутой почти на весь лист."""
+    import cv2
+    import numpy as np
+    doc = fitz.open()
+    page = doc.new_page(width=page_pt, height=page_pt)
+    img = np.full((px, px), 255, np.uint8)
+    cv2.rectangle(img, (px // 8, px // 8), (px - px // 8, px - px // 8), 0, 1)
+    cv2.putText(img, "12", (px // 3, px // 2), cv2.FONT_HERSHEY_SIMPLEX, px / 120.0, 0, 1)
+    ok, png = cv2.imencode(".png", img)
+    assert ok
+    page.insert_image(fitz.Rect(10, 10, page_pt - 10, page_pt - 10), stream=png.tobytes())
+    if rotate:
+        page.set_rotation(rotate)
+    return doc, page
+
+
+def test_lowres_raster_is_upscaled_from_native_pixels():
+    """Картинка 96 dpi на весь лист: рендер заменяется увеличенными исходными
+    пикселями, заметка называет разрешение и кратность. Картинка 300 dpi и
+    векторный лист — без изменений."""
+    import numpy as np
+    from ocrpdf.glyph_ocr import GlyphLayer, upscale_lowres_raster
+    doc, page = _page_with_image(px=120)                     # 120 px на 380 pt ≈ 23 dpi
+    layer = GlyphLayer(page, dpi=200)
+    assert layer.lowres_note and "23 dpi" in layer.lowres_note and "120×120" in layer.lowres_note
+    pix = page.get_pixmap(dpi=200, colorspace=fitz.csGRAY)
+    plain = np.frombuffer(pix.samples, np.uint8).reshape(pix.height, pix.width)
+    assert layer.img.shape == plain.shape
+    assert not np.array_equal(layer.img, plain)              # пиксели картинки пересчитаны
+    # белое поле вне картинки не тронуто, чёрная рамка на месте
+    assert layer.img[2, 2] == 255 and plain[2, 2] == 255
+    z = 200 / 72.0
+    y = int((10 + 380 / 8) * z)
+    assert layer.img[y, int(200 * z)] < 128
+    # картинка высокого разрешения — как отрендерил MuPDF
+    doc2, page2 = _page_with_image(px=1600)                  # ≈ 300 dpi
+    img2, note2 = upscale_lowres_raster(page2, plain.copy(), z)
+    assert note2 == "" and np.array_equal(img2, plain)
+    # повёрнутая страница — не трогаем
+    doc3, page3 = _page_with_image(px=120, rotate=90)
+    img3, note3 = upscale_lowres_raster(page3, plain.copy(), z)
+    assert note3 == "" and np.array_equal(img3, plain)
+    # векторный лист без картинок
+    doc4 = fitz.open()
+    page4 = doc4.new_page(width=400, height=400)
+    page4.draw_line((10, 10), (390, 10))
+    img4, note4 = upscale_lowres_raster(page4, plain.copy(), z)
+    assert note4 == "" and np.array_equal(img4, plain)
+
+
+def test_lowres_orientation_matches_render():
+    """Исходная картинка в PDF может лежать перевёрнутой — ориентация подбирается
+    по совпадению с рендером той же области."""
+    import numpy as np
+    from ocrpdf.glyph_ocr import _best_orientation
+    native = np.full((40, 60), 255, np.uint8)
+    native[5:15, 5:25] = 0                                    # чёрный блок в левом верхнем углу
+    rendered = np.kron(native, np.ones((4, 4), np.uint8))     # рендер той же ориентации ×4
+    assert np.array_equal(_best_orientation(native[::-1, ::-1].copy(), rendered), native)
+    assert np.array_equal(_best_orientation(native[::-1, :].copy(), rendered), native)
+    assert np.array_equal(_best_orientation(native.copy(), rendered), native)
+
+
+def test_delta_thickness_units_tolerant():
+    """«5=4 HH», «5=8 HM», «5=10 HX» — единицы «мм» растровый OCR читает как угодно."""
+    from ocrpdf.normalizer import fix_sheet_thickness
+    rows = _rows_in_group("Сталь листовая горячекатаная", [("5=4 HH", ""), ("5=8 HM", ""), ("5=10 HX", ""), ("0=6 MN", "")])
+    assert fix_sheet_thickness(rows) == 4
+    assert [r.cells["profile_size"].text for r in rows] == ["t4", "t8", "t10", "t6"]

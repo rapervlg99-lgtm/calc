@@ -743,6 +743,95 @@ def _collect_primitives(page: fitz.Page, eps: float = 0.05, glyph_max: float = 1
 # минуты, а для чтения ячеек хватает ~150 DPI. Ограничиваем длинную сторону.
 MAX_PIXMAP_SIDE = 7200
 
+# Картинка листа с разрешением ниже этого — скриншот, вставленный в Word
+# («Рама для вентилятора»: 689×660 px на А4, 96 dpi, текст 7 px). MuPDF при
+# рендере растягивает её билинейно в мыло; бикубическое увеличение исходных
+# пикселей с нерезкой маской читается RapidOCR заметно лучше: «1400» → «1.400»,
+# «L NOx8» → «L100x8», номера позиций и марки стали появляются.
+LOWRES_MAX_DPI = 200.0
+# Картинка занимает не весь лист: на Obshchaga_KM таблица-скриншот — 43 % площади А4.
+LOWRES_MIN_AREA = 0.3
+# «интерполяция_постобработка»: cubic|lanczos + unsharp|otsu|none. По умолчанию —
+# чистый Lanczos без резкости и бинаризации: на «Раме для вентилятора» все 12
+# размеров, 49 проверок из 52 и 27 спорных ячеек против 9/12, 41/46 и 48 у
+# рендера MuPDF; нерезкая маска и Otsu портят мелкий курсив шапки
+# («Прогоны» пропадает). Сравнение вариантов — WORKLOG 2026-09-21.
+LOWRES_MODE = os.environ.get("OCRPDF_LOWRES_MODE", "lanczos_none")
+
+
+def _unsharp(img: np.ndarray, amount: float = 1.0, sigma: float = 1.5) -> np.ndarray:
+    import cv2
+    blur = cv2.GaussianBlur(img, (0, 0), sigma)
+    return cv2.addWeighted(img, 1 + amount, blur, -amount, 0)
+
+
+def _best_orientation(native: np.ndarray, rendered: np.ndarray) -> np.ndarray:
+    """Исходная картинка может лежать в PDF перевёрнутой (матрица размещения);
+    ориентация подбирается по совпадению с рендером той же области."""
+    import cv2
+    small = cv2.resize(rendered, (native.shape[1], native.shape[0]), interpolation=cv2.INTER_AREA).astype(np.float32)
+    small -= small.mean()
+    best, best_score = native, -2.0
+    for cand in (native, native[::-1, :], native[:, ::-1], native[::-1, ::-1]):
+        a = cand.astype(np.float32); a -= a.mean()
+        denom = float(np.sqrt((a * a).sum() * (small * small).sum())) or 1.0
+        score = float((a * small).sum()) / denom
+        if score > best_score:
+            best, best_score = cand, score
+    return np.ascontiguousarray(best)
+
+
+def upscale_lowres_raster(page: fitz.Page, img: np.ndarray, zoom: float) -> tuple[np.ndarray, str]:
+    """Если лист — одна большая картинка низкого разрешения, её пиксели
+    увеличиваются до масштаба рендера (бикубически, с нерезкой маской) и
+    кладутся на место рендера. Возвращает (изображение, заметка или '')."""
+    import cv2
+    if page.rotation:
+        return img, ""
+    best = None
+    for info in page.get_image_info(xrefs=True):
+        r = fitz.Rect(info["bbox"])
+        if r.get_area() < LOWRES_MIN_AREA * abs(page.rect.get_area()) or not info.get("xref"):
+            continue
+        tr = info.get("transform") or (1, 0, 0, 1, 0, 0)
+        if abs(tr[1]) > 1e-3 or abs(tr[2]) > 1e-3:      # повёрнутое размещение — не трогаем
+            continue
+        eff = info["width"] / (r.width / 72.0)
+        if best is None or r.get_area() > best[1].get_area():
+            best = (info["xref"], r, info["width"], info["height"], eff)
+    if best is None:
+        return img, ""
+    xref, r, w, h, eff = best
+    if eff >= LOWRES_MAX_DPI or w < 50 or h < 50:
+        return img, ""
+    try:
+        pix = fitz.Pixmap(page.parent, xref)
+        if pix.n - pix.alpha >= 3:
+            pix = fitz.Pixmap(fitz.csGRAY, pix)
+        if pix.alpha:
+            pix = fitz.Pixmap(pix, 0)
+        native = np.frombuffer(pix.samples, np.uint8).reshape(pix.height, pix.width).copy()
+    except Exception:
+        return img, ""
+    x0, y0 = max(0, int(round(r.x0 * zoom))), max(0, int(round(r.y0 * zoom)))
+    x1, y1 = min(img.shape[1], int(round(r.x1 * zoom))), min(img.shape[0], int(round(r.y1 * zoom)))
+    W, H = x1 - x0, y1 - y0
+    if W < 50 or H < 50:
+        return img, ""
+    native = _best_orientation(native, img[y0:y1, x0:x1])
+    interp, _, post = LOWRES_MODE.partition("_")
+    up = cv2.resize(native, (W, H),
+                    interpolation=cv2.INTER_LANCZOS4 if interp == "lanczos" else cv2.INTER_CUBIC)
+    if post == "otsu":
+        _, up = cv2.threshold(up, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
+    elif post == "unsharp":
+        up = _unsharp(up)
+    out = img.copy()
+    out[y0:y1, x0:x1] = up
+    note = ("растр низкого разрешения (%d dpi, %d×%d px): картинка листа увеличена ×%.1f "
+            "(%s) вместо рендера" % (round(eff), w, h, W / w, LOWRES_MODE))
+    return out, note
+
 
 @dataclass
 class GlyphLayer:
@@ -754,6 +843,7 @@ class GlyphLayer:
     fonts: list[str] = field(default_factory=list)
     variants: list[Variant] = field(default_factory=list)
     _calibrated: bool = field(default=False, repr=False)
+    lowres_note: str = ""     # растр низкого разрешения заменён увеличенной картинкой
 
     def __post_init__(self) -> None:
         side = max(float(self.page.rect.width), float(self.page.rect.height))
@@ -763,6 +853,7 @@ class GlyphLayer:
         self.fonts = available_fonts()
         pix = self.page.get_pixmap(dpi=self.dpi, colorspace=fitz.csGRAY)
         self.img = np.frombuffer(pix.samples, np.uint8).reshape(pix.height, pix.width).copy()
+        self.img, self.lowres_note = upscale_lowres_raster(self.page, self.img, self.zoom)
         self.comps = self._components()
         self.variants = []
         self._calibrated = False

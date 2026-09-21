@@ -11,10 +11,16 @@
         </div>
 
         <form v-if="row" class="row-editor" @submit.prevent="save">
-          <label class="row-editor__field">
+          <div class="row-editor__field">
             <span class="row-editor__label">Марка профиля</span>
-            <input v-model="form.profileMark" class="cell-input" placeholder="например, 35Б2" />
-          </label>
+            <!-- подсказки из справочника; выбор подставляет и массу 1 м -->
+            <ProfileMarkInput
+              v-model="form.profileMark"
+              :prefer-category="category"
+              aria-label="Марка профиля"
+              @pick="onMarkPick"
+            />
+          </div>
           <label class="row-editor__field">
             <span class="row-editor__label">Конструкция</span>
             <select v-model="form.construction" class="cell-input">
@@ -84,14 +90,18 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, ref, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import HeatingSidesPicker from './HeatingSidesPicker.vue'
+import ProfileMarkInput from './ProfileMarkInput.vue'
 import { bearingTypeChoices } from '@/utils/bearingTypes'
 import {
   coatingTypeChoices,
   isCoatingAvailableForFireLimit
 } from '@/utils/coatingTypes'
 import { fireLimitChoices } from '@/utils/fireLimits'
+import { profileCategory } from '@/utils/ocrImport'
+import { groupForCategory } from '@/utils/profileGroups'
+import type { ProfileOption } from '@/utils/profileSuggest'
 import type { OgzRow, OgzRowPatch } from '@/types/ogz'
 
 const props = defineProps<{ open: boolean; row: OgzRow | null }>()
@@ -122,6 +132,22 @@ const constructionChoices = [
   'Прогоны'
 ]
 
+// Вид профиля редактируемой строки — марки того же вида в подсказках первыми.
+const category = computed(() =>
+  props.row
+    ? profileCategory(props.row.name || '', props.row.gostProfile || '', props.row.profileRaw || props.row.profileMark || '')
+    : ''
+)
+
+/** Последний выбор из справочника — при сохранении по нему меняются наименование и ГОСТ группы. */
+const pickedOption = ref<ProfileOption | null>(null)
+
+/** Марка выбрана из справочника — масса 1 м подставляется, её можно поправить руками. */
+function onMarkPick(option: ProfileOption): void {
+  massPerMeterStr.value = String(option.massPerMeter)
+  pickedOption.value = option
+}
+
 function onFireLimitSelect(): void {
   if (
     form.coatingType &&
@@ -135,6 +161,7 @@ watch(
   () => props.row,
   (row) => {
     error.value = null
+    pickedOption.value = null
     if (!row) return
     form.profileMark = row.profileMark
     form.construction = row.construction || 'Балки'
@@ -160,6 +187,16 @@ function save(): void {
     fireLimit: form.fireLimit.trim(),
     bearingType: form.bearingType.trim(),
     coatingType: form.coatingType.trim()
+  }
+  // марка из справочника другого вида профиля — вместе с ней меняются
+  // наименование группы и ГОСТ сортамента (двутавр → швеллер)
+  const picked = pickedOption.value
+  if (picked && picked.mark === patch.profileMark && picked.category && picked.category !== category.value) {
+    const group = groupForCategory(picked.category, picked.mark)
+    if (group) {
+      patch.name = group.name
+      patch.gostProfile = group.gost
+    }
   }
   const rawMass = massPerMeterStr.value.trim().replace(',', '.')
   if (rawMass !== '') {

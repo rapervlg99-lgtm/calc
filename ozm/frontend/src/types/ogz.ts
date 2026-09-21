@@ -72,6 +72,12 @@ export interface OgzRowPatch {
   coatingType?: string
   construction?: string
   name?: string
+  /**
+   * Клиентское поле: ГОСТ сортамента при смене вида профиля вручную
+   * (двутавр → швеллер). В контракте /ext его нет — сервер поле игнорирует,
+   * для заданий из локального OCR оно применяется в браузере.
+   */
+  gostProfile?: string
 }
 
 export interface PrefillItem {
