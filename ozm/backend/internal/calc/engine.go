@@ -96,16 +96,19 @@ func (e *Engine) calcElement(groupID, elID string, el models.ElementInput, group
 	trace := []string{}
 	dims := e.resolveDims(el)
 	f := sectionArea(el.Shape, dims)
+	if area, ok := e.catalogArea(el, dims); ok {
+		f = area
+	}
 	pi := heatedPerimeter(el.Shape, dims, el.Sides)
 	dpr := deltaPr(f, pi)
 	trace = append(trace, fmt.Sprintf("%s: F=%.0f Π=%.0f δпр=%.1f", elID, f, pi, dpr))
 
 	er := models.ElementResult{
-		ID: groupID + "/" + elID, // keep stable path
+		ID:      groupID + "/" + elID, // keep stable path
 		GroupID: groupID,
-		Title: el.Title,
-		Shape: el.Shape,
-		F: f, Pi: pi, Dpr: dpr,
+		Title:   el.Title,
+		Shape:   el.Shape,
+		F:       f, Pi: pi, Dpr: dpr,
 		Coat: el.Coat, HtLevel: el.HtLevel,
 		LengthM: el.LengthM, Quantity: el.Quantity * groupQty,
 	}
@@ -246,6 +249,29 @@ func (e *Engine) resolveDims(el models.ElementInput) map[string]float64 {
 	}
 	normalizeDims(el.Shape, dims)
 	return dims
+}
+
+// Imported profiles carry the tabulated area, not an approximation from nominal
+// dimensions. Use it only while the selected profile's dimensions are unchanged;
+// manual overrides must still be evaluated from their own geometry.
+func (e *Engine) catalogArea(el models.ElementInput, dims map[string]float64) (float64, bool) {
+	for _, r := range e.cfg.Roll {
+		if r.ID != el.RollID || r.Shape != el.Shape || r.Source != "calclab-metalloprokat" || r.AreaMM2 <= 0 {
+			continue
+		}
+		expected := map[string]float64{}
+		for k, v := range r.Dims {
+			expected[k] = v
+		}
+		normalizeDims(r.Shape, expected)
+		for _, k := range []string{"h", "b", "b1", "s", "t", "tr", "R", "r"} {
+			if math.Abs(dims[k]-expected[k]) > 1e-6 {
+				return 0, false
+			}
+		}
+		return r.AreaMM2, true
+	}
+	return 0, false
 }
 
 func parseCoat(s string) float64 {

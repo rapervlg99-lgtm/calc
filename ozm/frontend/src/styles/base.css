@@ -4,7 +4,7 @@
  */
 
 .ozm-page {
-  max-width: 1400px;
+  max-width: 1440px;       /* общий контейнер с калькулятором, см. app.css */
   margin: 0 auto;
   padding: 24px 24px 64px;
   display: flex;
@@ -20,27 +20,27 @@
   padding: 0 4px;
 }
 .ozm-title {
-  font-size: 24px;
-  line-height: 32px;
-  font-weight: 700;
+  font-size: var(--font-size-headline-medium);
+  line-height: var(--font-lineHeight-headline-medium);
+  font-weight: var(--font-weight-heading);
 }
 .ozm-top-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 
 .recognize-lead {
-  font-size: 16px;
-  line-height: 22px;
+  font-size: var(--font-size-body-medium);
+  line-height: var(--font-lineHeight-body-medium);
   color: var(--content-secondary-enabled);
   max-width: 720px;
   margin: 0 4px;
 }
 .section-title {
-  font-size: 16px;
-  line-height: 22px;
-  font-weight: 600;
+  font-size: var(--font-size-title-medium);
+  line-height: var(--font-lineHeight-title-medium);
+  font-weight: var(--font-weight-accent);
   margin: 8px 0 0;
 }
-.muted { color: var(--content-secondary-enabled); font-size: 14px; line-height: 20px; }
-.error { color: var(--content-system-negative); font-size: 14px; line-height: 20px; }
+.muted { color: var(--content-secondary-enabled); font-size: var(--font-size-body-small); line-height: var(--font-lineHeight-body-small); }
+.error { color: var(--content-system-negative); font-size: var(--font-size-body-small); line-height: var(--font-lineHeight-body-small); }
 
 /* ---- кнопки (legacy-классы → облик TN Life button) ---- */
 .btn-primary,
@@ -55,9 +55,9 @@
   border-radius: 12px;
   border: none;
   font: inherit;
-  font-size: 16px;
-  line-height: 22px;
-  font-weight: 600;
+  font-size: var(--font-size-body-medium);
+  line-height: var(--font-lineHeight-body-medium);
+  font-weight: var(--font-weight-accent);
   white-space: nowrap;
   cursor: pointer;
   user-select: none;
@@ -76,7 +76,7 @@
 .btn-primary:disabled,
 .btn-ghost:disabled,
 .btn-add:disabled { background: var(--background-primary-a-disabled); color: var(--content-primary-a-disabled); cursor: not-allowed; }
-.btn-sm { height: 32px; padding: 6px 12px; font-size: 14px; line-height: 20px; border-radius: 8px; }
+.btn-sm { height: 32px; padding: 6px 12px; font-size: var(--font-size-body-small); line-height: var(--font-lineHeight-body-small); border-radius: 8px; }
 .btn-add .plus {
   width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center;
   font-size: 18px; line-height: 1;
@@ -87,9 +87,9 @@ a.btn-primary { color: var(--content-primary-b-enabled); }
 .field { position: relative; margin-bottom: 12px; }
 .field-label {
   display: block;
-  font-size: 16px;
-  line-height: 16px;
-  font-weight: 600;
+  font-size: var(--font-size-body-medium);
+  line-height: var(--font-lineHeight-label-medium);
+  font-weight: var(--font-weight-accent);
   color: var(--content-primary-a-enabled);
   margin-bottom: 10px;
 }
@@ -101,7 +101,7 @@ a.btn-primary { color: var(--content-primary-b-enabled); }
   background: var(--background-primary-a-enabled);
   padding: 0 12px;
   font: inherit;
-  font-size: 16px;
+  font-size: var(--font-size-body-medium);
   color: var(--content-primary-a-enabled);
   transition: border-color 0.3s;
 }
@@ -122,9 +122,9 @@ select.field-control {
   border-left: 4px solid var(--content-accent-enabled);
   border-radius: 12px;
   padding: 12px 16px;
-  font-size: 14px;
-  line-height: 20px;
-  font-weight: 600;
+  font-size: var(--font-size-body-small);
+  line-height: var(--font-lineHeight-body-small);
+  font-weight: var(--font-weight-accent);
 }
 
 /* ---- загрузка PDF ---- */
@@ -139,7 +139,7 @@ select.field-control {
 }
 .dropzone.over { border-color: var(--content-accent-enabled); background: var(--red-5); }
 .dropzone.busy { opacity: 0.6; pointer-events: none; }
-.dropzone-title { font-size: 20px; line-height: 28px; font-weight: 700; }
+.dropzone-title { font-size: var(--font-size-headline-small); line-height: var(--font-lineHeight-headline-small); font-weight: var(--font-weight-heading); }
 .file-btn { position: relative; overflow: hidden; margin-top: 8px; }
 .file-btn input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
 .page-actions { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -149,8 +149,8 @@ select.field-control {
 .ogz-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 14px;
-  line-height: 20px;
+  font-size: var(--font-size-body-small);
+  line-height: var(--font-lineHeight-body-small);
   background: var(--background-primary-a-enabled);
 }
 .ogz-table th,
@@ -161,8 +161,8 @@ select.field-control {
   vertical-align: middle;
 }
 .ogz-table th {
-  font-size: 14px;
-  font-weight: 600;
+  font-size: var(--font-size-body-small);
+  font-weight: var(--font-weight-accent);
   color: var(--content-secondary-enabled);
   background: var(--background-secondary-a-enabled);
 }
@@ -174,7 +174,7 @@ select.field-control {
   border-radius: 8px;
   padding: 0 8px;
   font: inherit;
-  font-size: 14px;
+  font-size: var(--font-size-body-small);
   background: var(--background-primary-a-enabled);
   color: var(--content-primary-a-enabled);
 }
@@ -184,12 +184,12 @@ select.field-control {
   padding: 2px 8px;
   border-radius: 8px;
   background: var(--background-secondary-a-enabled);
-  font-size: 12px;
-  line-height: 16px;
-  font-weight: 600;
+  font-size: var(--font-size-label-medium);
+  line-height: var(--font-lineHeight-label-medium);
+  font-weight: var(--font-weight-accent);
   white-space: nowrap;
 }
-.sheet-list { margin: 0; padding-left: 18px; font-size: 14px; line-height: 20px; }
+.sheet-list { margin: 0; padding-left: 18px; font-size: var(--font-size-body-small); line-height: var(--font-lineHeight-body-small); }
 
 @media (max-width: 700px) {
   .ozm-page { padding: 16px 16px 48px; }

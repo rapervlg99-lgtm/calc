@@ -82,6 +82,14 @@ func sectionArea(shape string, dims map[string]float64) float64 {
 	pi := math.Pi
 
 	switch {
+	case shape == "channel_bent", shape == "channel_unequal":
+		b1 := b
+		if shape == "channel_unequal" {
+			b1 = dim(dims, "b1")
+		}
+		// Uniform-thickness bent channel. Catalog selections use tabulated A;
+		// this branch is the geometric fallback for manual dimensions.
+		return s*(h+b+b1-2*s) - (4-pi)*s*(2*R+s)
 	case strings.HasPrefix(shape, "I-beam"), strings.HasPrefix(shape, "channel"):
 		return h*s + 2*t*(b-s) + (4-pi)*R*R
 	case strings.HasPrefix(shape, "brands"):
@@ -144,6 +152,20 @@ func heatedPerimeter(shape string, dims map[string]float64, sides models.HeatedS
 	}
 
 	switch {
+	case shape == "channel_bent", shape == "channel_unequal":
+		b1 := b
+		if shape == "channel_unequal" {
+			b1 = dim(dims, "b1")
+		}
+		// Closed boundary of the open bent channel: outer web, outer flanges,
+		// inner contour and free edges. Same inner/outer radius convention as
+		// CalcLab's section-svg channelContour/channelUnequalContour (R, R+s).
+		outer := R + s
+		left := h - 2*outer + pi*outer/2
+		top := b1 - outer + pi*outer/4
+		bottom := b - outer + pi*outer/4
+		right := h + b + b1 - 2*s - 4*R + pi*R
+		return L*left + T*top + B*bottom + Rr*right
 	case strings.HasPrefix(shape, "I-beam"):
 		calcLR := h + (b - s) - (4-pi)*R
 		if strings.Contains(shape, "_sl") {

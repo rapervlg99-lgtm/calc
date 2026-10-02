@@ -428,6 +428,39 @@ def test_build_grid_joins_gapped_column_separator():
     assert any(abs(x - 40.0) < 1 for x in blk.xs)
 
 
+def test_build_grid_keeps_short_header_rule_between_columns():
+    """Короткая линия под объединённой «Масса металла, т» (лист 88-06-2026-КМ):
+    тянется на две графы из семи, но концы лежат на колонках — это граница
+    строки. Слева от неё ячейки шапки остаются высокими (row_span 2)."""
+    xs = [0.0, 60.0, 120.0, 180.0, 240.0, 300.0, 360.0, 420.0]
+    ys = [0.0, 30.0, 70.0, 100.0, 130.0, 160.0, 190.0]     # 30 — короткая линия шапки
+    h = []
+    for y in ys:
+        if abs(y - 30.0) < 0.1:
+            h.append(Ruling(y, 240.0, 360.0))               # только над графами 5–6
+        else:
+            h.append(Ruling(y, xs[0], xs[-1]))
+    v = []
+    for x in xs:
+        if x in (0.0, 420.0):
+            v.append(Ruling(x, ys[0], ys[-1]))
+        elif x in (240.0, 300.0, 360.0):
+            v.append(Ruling(x, 0.0, 30.0)); v.append(Ruling(x, 30.0, 190.0))
+        else:
+            v.append(Ruling(x, 70.0, 190.0)); v.append(Ruling(x, 0.0, 70.0))
+    blk = _build_grid(h, v, (xs[0], ys[0], xs[-1], ys[-1]))
+    assert any(abs(y - 30.0) < 1 for y in blk.ys)
+    assert blk.n_rows == 6
+    tall = blk.cell_at(0, 0)
+    assert tall is not None and tall.row_span == 2          # «Наименование профиля» — на две строки
+    sub = blk.cell_at(1, 4)
+    assert sub is not None and sub.row == 1 and sub.row_span == 1 and sub.col_span == 1
+    # подчёркивание внутри ячейки (концы не на колонках) строкой не становится
+    h2 = h + [Ruling(50.0, 250.0, 290.0)]
+    blk2 = _build_grid(h2, v, (xs[0], ys[0], xs[-1], ys[-1]))
+    assert not any(abs(y - 50.0) < 1 for y in blk2.ys)
+
+
 def test_build_grid_detects_merged_cells():
     """Отсутствие разделителя = объединённая ячейка."""
     xs = [0.0, 30.0, 60.0, 90.0]

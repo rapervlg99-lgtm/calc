@@ -82,6 +82,8 @@ export interface OgzRowPatch {
 
 export interface PrefillItem {
   profileMark: string
+  /** Preserve assortment standard from the source specification. */
+  gostProfile?: string
   /** OCR construction column (Балки, Ригели, …) — used for element title. */
   construction?: string
   lengthM: number

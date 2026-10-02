@@ -260,7 +260,7 @@ watch(
 .row-editor-sheet__title {
   margin: 0;
   font-size: 18px;
-  font-weight: 600;
+  font-weight: var(--font-weight-accent);
 }
 
 .row-editor-sheet__desc {
@@ -281,7 +281,7 @@ watch(
   padding-top: 12px;
   border-top: 1px solid var(--border-secondary-enabled);
   font-size: 13px;
-  font-weight: 600;
+  font-weight: var(--font-weight-accent);
   color: var(--content-secondary-enabled);
 }
 
@@ -293,7 +293,7 @@ watch(
 
 .row-editor__label {
   font-size: 13px;
-  font-weight: 500;
+  font-weight: var(--font-weight-accent);
   color: var(--content-secondary-enabled);
 }
 

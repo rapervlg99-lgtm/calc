@@ -417,7 +417,7 @@ onMounted(async () => {
 .ogz__subtitle {
   margin: 8px 0 0;
   color: var(--content-secondary-enabled);
-  line-height: 22px;
+  line-height: var(--font-lineHeight-body-medium);
 }
 
 .ogz__actions {
@@ -459,8 +459,8 @@ onMounted(async () => {
 
 .ogz__banner-sub {
   margin-top: 6px;
-  font-weight: 600;
-  font-size: 14px;
+  font-weight: var(--font-weight-accent);
+  font-size: var(--font-size-body-small);
 }
 
 .ogz__banner-list_notes {
@@ -474,7 +474,7 @@ onMounted(async () => {
   border: 0;
   background: none;
   font: inherit;
-  font-weight: 600;
+  font-weight: var(--font-weight-accent);
   color: var(--content-primary-a-enabled);
   text-decoration: underline;
   cursor: pointer;
@@ -485,21 +485,21 @@ onMounted(async () => {
 }
 
 .ogz__banner-title {
-  font-weight: 600;
+  font-weight: var(--font-weight-accent);
   color: var(--content-system-warning);
 }
 
 .ogz__banner-list {
   margin: 4px 0 0;
   padding-left: 18px;
-  font-size: 14px;
-  line-height: 20px;
+  font-size: var(--font-size-body-small);
+  line-height: var(--font-lineHeight-body-small);
 }
 
 .ogz__msg {
   margin: 0;
   color: var(--content-system-positive);
-  font-size: 14px;
+  font-size: var(--font-size-body-small);
 }
 
 .ogz__msg_err {
@@ -527,7 +527,7 @@ onMounted(async () => {
   padding: 10px 14px;
   border-radius: 8px;
   font: inherit;
-  font-size: 14px;
+  font-size: var(--font-size-body-small);
   color: var(--content-secondary-enabled);
   cursor: pointer;
 }
@@ -535,7 +535,7 @@ onMounted(async () => {
 .ogz__tab_active {
   background: var(--soft);
   color: var(--text);
-  font-weight: 600;
+  font-weight: var(--font-weight-accent);
 }
 
 .ogz__empty-fill {

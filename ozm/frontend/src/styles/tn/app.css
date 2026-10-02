@@ -1,0 +1,21 @@
+.tn-fade-enter-active,
+.tn-fade-leave-active {
+  transition: opacity 0.2s linear;
+}
+
+.tn-fade-enter-from {
+  opacity: 0;
+}
+
+.tn-fade-enter {
+  opacity: 1;
+}
+
+.tn-fade-leave-to {
+  opacity: 0;
+}
+
+.tn-fade-enter-to,
+.tn-fade-leave {
+  opacity: 1;
+}

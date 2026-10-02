@@ -19,16 +19,29 @@
 
 *, *::before, *::after { box-sizing: border-box; }
 
+/* База rem-шкалы токенов UI Kit 7 (migration-Inter-font.md): литерал 15px на html,
+   а не var() — токены сами посчитаны в rem от корня. */
+html {
+  font-size: 15px;
+}
+
 html, body {
   margin: 0;
   padding: 0;
-  font-family: var(--font-family-base);
+  font-family: var(--font-family-body);
+  font-weight: var(--font-weight-text);
   color: var(--content-primary-a-enabled);
   background: var(--background-secondary-a-enabled);
-  font-size: var(--text-body-size);
-  line-height: var(--text-body-line);
+  line-height: var(--font-lineHeight-body-medium);
   -webkit-font-smoothing: antialiased;
 }
+
+body {
+  font-size: var(--font-size-body-medium);
+}
+
+/* в новой шкале нет веса 700: жирный текст в абзацах — accent (500) */
+b, strong { font-weight: var(--font-weight-accent); }
 
 h1, h2, h3, h4, h5, h6, p { margin: 0; }
 ul { list-style: none; padding: 0; margin: 0; }
@@ -40,15 +53,7 @@ input, select, textarea { outline: none; }
 a { color: var(--content-action-enabled); text-decoration: none; transition: color var(--duration-instant) linear; }
 a:hover { color: var(--content-action-hover); }
 
-/* Нативный select в облике tn-select: убираем системную стрелку, свою рисуем из спрайта */
-select.tn-select__native {
-  appearance: none;
-  -webkit-appearance: none;
-  padding-right: 44px;
-  font-family: var(--font-family-base);
-}
-select.tn-select__native_placeholder { color: var(--content-secondary-enabled); }
-.tn-select__arrow-static { pointer-events: none; }
+/* Нативных <select> в облике tn-select больше нет: TnSelect рисует список сам (Teleport) */
 
 /* Icon задаёт position inline-стилем? В Vue-порте нет, но на всякий случай фиксируем абсолют для иконки тега */
 .tn-tag > .tn-icon.tn-tag__icon { position: absolute; }

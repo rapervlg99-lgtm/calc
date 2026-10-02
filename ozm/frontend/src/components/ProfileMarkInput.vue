@@ -226,7 +226,7 @@ onBeforeUnmount(close);
 
 .pmi__input_compact {
   height: 32px;
-  width: 132px;
+  width: 112px;
   padding: 0 8px;
 }
 
@@ -244,12 +244,12 @@ onBeforeUnmount(close);
 }
 
 .pmi__mark {
-  font-weight: 500;
+  font-weight: var(--font-weight-accent);
   white-space: nowrap;
 }
 
 .pmi__meta {
-  font-size: 12px;
+  font-size: var(--font-size-label-medium);
   color: var(--content-secondary-enabled);
   white-space: nowrap;
 }

@@ -1,6 +1,7 @@
 import type { ElementInput, HeatedSides, RollMark } from '../types/api'
 import type { OgzRow, PrefillGroup, PrefillItem, PrefillPayload } from '../types/ogz'
 import { elementDisplayName } from './constructionLabel'
+import { sourceRollsForGost } from './rollCatalog'
 
 export interface MappedElement {
   element: ElementInput
@@ -47,6 +48,7 @@ export function enrichPrefillWithGroups(
   const included = prefillableProfileRows(profileRows)
   const items = (payload.items || []).map((it, i) => ({
     ...it,
+    gostProfile: it.gostProfile || included[i]?.gostProfile,
     rowId: it.rowId ?? included[i]?.id
   }))
   const includedIds = new Set(included.map((r) => r.id))
@@ -78,6 +80,7 @@ export function normalizeMark(mark: string): string {
   // drop common prefixes from OCR / raw text
   s = s.replace(/^(ДВУТАВР|ДВУТАВР\.|I|ШВЕЛЛЕР|ШВ\.?|УГОЛОК|УГ\.?|ТРУБА|ТР\.?|ТР\s+|PIPE)\s*/i, '')
   s = s
+    .replace(/,/g, '.')
     .replace(/[×ХX]/gi, 'X')
     .replace(/[БB]/gi, 'B') // beam series letter
     .replace(/[КK]/gi, 'K')
@@ -167,6 +170,10 @@ export function buildRollIndex(roll: RollMark[]): Map<string, RollMark> {
 /** Match profileMark to roll entry (exact aliases, then soft contains). */
 export function matchRoll(profileMark: string, roll: RollMark[], index?: Map<string, RollMark>): RollMark | null {
   const aliases = markAliases(profileMark)
+  if (roll.length && roll.every((r) => !!r.standard)) {
+    const exact = roll.filter((r) => markAliases(r.label).some((a) => aliases.includes(a)))
+    if (exact.length > 1 && exact.some((r) => JSON.stringify(r.dims) !== JSON.stringify(exact[0].dims) || r.areaMm2 !== exact[0].areaMm2)) return null
+  }
   const idx = index || buildRollIndex(roll)
   for (const a of aliases) {
     const hit = idx.get(a)
@@ -199,8 +206,13 @@ export function mapPrefillItem(
   // Подсказка о формах сечения сужает поиск: «140х5» без неё находит первую
   // попавшуюся трубу (круглую), а строка спецификации была квадратной.
   const shapes = item.shapes && item.shapes.length ? item.shapes : null
-  const pool = shapes ? roll.filter((r) => shapes.includes(r.shape)) : roll
-  const hit = matchRoll(item.profileMark, pool, shapes ? buildRollIndex(pool) : index)
+  let pool = shapes ? roll.filter((r) => shapes.includes(r.shape)) : roll
+  if (item.gostProfile) {
+    const standardPool = sourceRollsForGost(pool, item.gostProfile)
+    // An explicit standard must never silently pick a profile of another ГОСТ.
+    pool = standardPool.length ? standardPool : pool.filter((r) => !r.standard)
+  }
+  const hit = matchRoll(item.profileMark, pool, shapes || item.gostProfile ? buildRollIndex(pool) : index)
   const coat = mapCoatingType(item.coatingType)
   const mark = item.profileMark || hit?.label || ''
   const construction = item.construction || ''

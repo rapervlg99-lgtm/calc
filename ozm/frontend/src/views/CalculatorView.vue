@@ -289,7 +289,6 @@ function resultFor(el: FormElement): ElementResult | undefined {
   return resultById.value.get(`e${el._uid}`)
 }
 const totals = computed(() => totalsOf(result.value?.elements || []))
-const betonVolume = computed(() => result.value?.materials.filter((m) => m.id === 'OZB').reduce((a, m) => a + m.quantity, 0) || 0)
 const messages = computed(() =>
   (result.value?.elements || [])
     .filter((r) => r.exclusion)
@@ -347,7 +346,7 @@ const barTitle = computed(() => {
       <TnButton secondary size="md" @click="store.loadDicts()">Повторить</TnButton>
     </div>
 
-    <div v-else-if="dicts" class="calc-layout">
+    <div v-else-if="dicts" class="calc-layout" :class="{ 'calc-layout_single': !messages.length }">
       <!-- Основная колонка -->
       <div class="calc-main">
         <div v-if="prefillNote" class="calc-banner"><TnIcon name="info" :size="20" /><span>{{ prefillNote }}</span></div>
@@ -446,7 +445,7 @@ const barTitle = computed(() => {
               <div class="calc-h2">Сообщения расчёта</div>
               <div v-for="m in messages" :key="m.id" class="calc-msg">
                 <div class="calc-msg-dot" :style="{ background: m.color }" />
-                <div class="calc-msg-text"><span style="font-weight: 600">{{ m.title }}</span> — <span style="color: var(--content-secondary-enabled)">{{ m.text }}</span></div>
+                <div class="calc-msg-text"><span style="font-weight: var(--font-weight-accent)">{{ m.title }}</span> — <span style="color: var(--content-secondary-enabled)">{{ m.text }}</span></div>
               </div>
             </div>
           </TnCard>
@@ -481,38 +480,15 @@ const barTitle = computed(() => {
         </template>
       </div>
 
-      <!-- Боковая колонка -->
-      <div class="calc-side">
+      <!-- Боковая колонка: только сообщения расчёта; «Сводка» убрана (2026-09-23),
+           её цифры и так есть в нижней панели и в ведомости -->
+      <div v-if="messages.length" class="calc-side">
         <TnCard>
-          <div class="calc-col">
-            <div class="calc-h2">Сводка</div>
-            <div style="display: flex; flex-direction: column; gap: 10px">
-              <div class="calc-summary-row"><div class="calc-summary-label">Объект</div><div class="calc-summary-value calc-ellipsis" style="max-width: 60%">{{ form.objectName.trim() || '—' }}</div></div>
-              <div class="calc-summary-row"><div class="calc-summary-label">Степень огнестойкости</div><div class="calc-summary-value">{{ durabilityLabel(form.frDurability) }}</div></div>
-              <div class="calc-summary-row"><div class="calc-summary-label">Групп / элементов</div><div class="calc-summary-value">{{ form.groups.length }} / {{ allElements.length }}</div></div>
-              <div class="calc-summary-row"><div class="calc-summary-label">Общая длина</div><div class="calc-summary-value">{{ fmt(totalLength, 1) }} м</div></div>
-              <div class="calc-summary-row"><div class="calc-summary-label">Бетон (ОЗБ)</div><div class="calc-summary-value">{{ form.betonOn ? `${fmt(Number(form.betonArea) || 0, 0)} м² · R${form.betonR}` : 'не считается' }}</div></div>
-            </div>
-            <div class="calc-divider" />
-            <div style="display: flex; flex-direction: column; gap: 10px">
-              <template v-if="result">
-                <div class="calc-summary-row"><div class="calc-summary-label">Площадь огнезащиты</div><div class="calc-summary-value">{{ fmt(totals.area, 1) }} м²</div></div>
-                <div class="calc-summary-row"><div class="calc-summary-label">Объём плитных материалов</div><div class="calc-summary-value">{{ fmt(totals.volumeM3 + betonVolume, 3) }} м³</div></div>
-                <div class="calc-summary-row"><div class="calc-summary-label">Масса составов TAIKOR</div><div class="calc-summary-value">{{ fmt(totals.massKg, 1) }} кг</div></div>
-                <div class="calc-summary-row"><div class="calc-summary-label">Сообщений расчёта</div><div class="calc-summary-value" :style="{ color: messages.length ? ORANGE : GREEN }">{{ messages.length }}</div></div>
-              </template>
-              <div v-else class="calc-summary-row"><div class="calc-summary-label">Результат</div><div class="calc-summary-value" style="color: var(--content-tertiary-enabled)">не рассчитан</div></div>
-            </div>
-            <div class="calc-hint" style="color: var(--content-tertiary-enabled)">{{ result && !stale ? 'Ведомость и выгрузки соответствуют текущим данным' : 'Итоги обновятся после расчёта' }}</div>
-          </div>
-        </TnCard>
-
-        <TnCard v-if="messages.length">
           <div class="calc-col-12">
             <div class="calc-h2">Требует внимания</div>
             <div v-for="m in messages" :key="m.id" class="calc-msg">
               <div class="calc-msg-dot" :style="{ background: m.color }" />
-              <div class="calc-msg-text"><span style="font-weight: 600">{{ m.title }}</span><br /><span style="color: var(--content-secondary-enabled)">{{ m.short }}</span></div>
+              <div class="calc-msg-text"><span style="font-weight: var(--font-weight-accent)">{{ m.title }}</span><br /><span style="color: var(--content-secondary-enabled)">{{ m.short }}</span></div>
             </div>
           </div>
         </TnCard>

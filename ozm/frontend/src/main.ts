@@ -4,7 +4,11 @@ import { createRouter, createWebHistory } from 'vue-router'
 import { routes } from './router'
 import App from './App.vue'
 // Дизайн-система TN Life: шрифты, токены, CSS компонентов; затем алиасы и стили страниц.
+// UI Kit 7.0.0: переменные (Inter, rem-шкала), тёмная тема, шрифт, переходы, стили компонентов
+import './styles/tn/variables.css'
+import './styles/tn/variables-dark.css'
 import './styles/tn/fonts.css'
+import './styles/tn/app.css'
 import './styles/tn/tokens.css'
 import './styles/tn/components.css'
 import './styles/tokens.css'

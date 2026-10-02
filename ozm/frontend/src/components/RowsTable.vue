@@ -148,7 +148,7 @@ function needsAttention(row: OgzRow): boolean {
 .rows__table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 14px;
+  font-size: var(--font-size-body-small);
 }
 
 .rows__table th,
@@ -160,7 +160,7 @@ function needsAttention(row: OgzRow): boolean {
 }
 
 .rows__table th {
-  font-weight: 600;
+  font-weight: var(--font-weight-accent);
   color: var(--content-secondary-enabled);
 }
 

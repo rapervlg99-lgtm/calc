@@ -1,7 +1,12 @@
 export interface SelectOption { value: string; label: string }
 export interface ProfileShape { id: string; label: string; picture?: string }
 export interface ProfileFamily { id: string; label: string; hard: number; shapes: ProfileShape[] }
-export interface RollMark { id: string; shape: string; label: string; dims: Record<string, number> }
+export interface RollMark {
+  id: string; shape: string; label: string; dims: Record<string, number>
+  standard?: string; standardLabel?: string; standardStatus?: string
+  familyLabel?: string; source?: string; sourceRowId?: string
+  areaMm2?: number; massPerMeter?: number
+}
 export interface MaterialRT { id: string; title: string; unit: string; q?: number; rate?: number }
 export interface CalcConfig {
   taikorQ: number; ozmQ: number; ozbQ: number; steelDensity: number

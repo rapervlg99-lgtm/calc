@@ -1,0 +1,93 @@
+{
+  "source": "CalcLab /references/metalloprokat",
+  "catalogSha256": "e24025d7ae3528fc7310b1915ea86c0367e53b3b9d5d0fcce8c03a09a5cb5d59",
+  "gostIndexSha256": "804ec19765dc60dd0e0d884e02726638d31b000f904aec3ed8af7b553ceaa202",
+  "sourceCatalogRows": 3755,
+  "referenceProfiles": 3555,
+  "excludedOrHiddenRows": 200,
+  "legacyProfilesPreserved": 2594,
+  "sourceProfilesWithLegacyGeometry": 1752,
+  "sourceProfilesWithoutLegacyGeometry": 1803,
+  "addedStandardQualifiedProfiles": 3555,
+  "totalRollProfiles": 6149,
+  "groups": [
+    {
+      "shape": "i_section",
+      "standard": "ГОСТ 35087-2024",
+      "status": "current",
+      "profiles": 350
+    },
+    {
+      "shape": "i_section",
+      "standard": "ГОСТ 19425-74",
+      "status": "current",
+      "profiles": 5
+    },
+    {
+      "shape": "i_section",
+      "standard": "ГОСТ 26020-83",
+      "status": "deprecated",
+      "profiles": 91
+    },
+    {
+      "shape": "channel",
+      "standard": "ГОСТ 8240-2026",
+      "status": "current",
+      "profiles": 61
+    },
+    {
+      "shape": "channel",
+      "standard": "ГОСТ 8278-83",
+      "status": "current",
+      "profiles": 307
+    },
+    {
+      "shape": "channel_unequal",
+      "standard": "ГОСТ 8281-80",
+      "status": "current",
+      "profiles": 116
+    },
+    {
+      "shape": "angle",
+      "standard": "ГОСТ 8509-2026",
+      "status": "current",
+      "profiles": 89
+    },
+    {
+      "shape": "angle",
+      "standard": "ГОСТ 8510-86",
+      "status": "current",
+      "profiles": 62
+    },
+    {
+      "shape": "tee",
+      "standard": "неизвестно",
+      "status": "no_gost",
+      "profiles": 72
+    },
+    {
+      "shape": "rhs_shs",
+      "standard": "ГОСТ 32931-2015",
+      "status": "current",
+      "profiles": 277
+    },
+    {
+      "shape": "rhs_shs",
+      "standard": "ГОСТ 30245-2003",
+      "status": "current",
+      "profiles": 587
+    },
+    {
+      "shape": "rhs_shs",
+      "standard": "ГОСТ 8639-82",
+      "status": "current",
+      "profiles": 96
+    },
+    {
+      "shape": "chs",
+      "standard": "ГОСТ 33228-2015",
+      "status": "current",
+      "profiles": 1442
+    }
+  ]
+}

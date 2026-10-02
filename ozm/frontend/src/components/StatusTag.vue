@@ -52,7 +52,7 @@ const modifier = computed(() => {
   display: inline-block;
   padding: 2px 8px;
   border-radius: 8px;
-  font-size: 12px;
+  font-size: var(--font-size-label-medium);
   line-height: 18px;
   white-space: nowrap;
 }

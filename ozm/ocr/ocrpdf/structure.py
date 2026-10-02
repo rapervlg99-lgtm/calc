@@ -29,6 +29,7 @@ from .vector_grid import TableBlock
 # Ключевые слова шапки -> роль колонки. Сопоставление по «скелету» строки
 # (нижний регистр, только буквы и цифры), поэтому переносы и запятые не мешают.
 ROLE_PATTERNS: list[tuple[str, str]] = [
+    ("видпрофиля", "profile_group"),
     ("наименованиепрофиля", "profile_group"),
     ("наименованиепрофил", "profile_group"),
     ("науменованиепрофил", "profile_group"),   # OCR «Наименование»
@@ -39,6 +40,8 @@ ROLE_PATTERNS: list[tuple[str, str]] = [
     ("номерилиразмерыпрофиля", "profile_size"),
     ("номерилиразмер", "profile_size"),       # OCR без «профиля, мм»
     ("размерыпрофил", "profile_size"),
+    ("обозначениеиразмерпрофиля", "profile_size"),
+    ("№попорядку", "position"),
     ("пп", "position"),
     ("поз", "position"),
     ("общаямасса", "total_mass"),
@@ -126,6 +129,7 @@ ELEMENT_CANON = [
     "Связи по колоннам", "Связи по фермам", "Вертикальные связи", "Горизонтальные связи",
     "Площадки", "Лестницы", "Ограждения", "Настил", "Профнастил",
     "Профнастил покрытия", "Кронштейны", "Опоры", "Подвески", "Эстакада",
+    "Конструкции этажерки", "Этажерка", "Площадки и лестницы", "Ограждения и площадки",
 ]
 ELEMENT_MIN_RATIO = 0.75
 ELEMENT_MIN_SKEL = 4
@@ -571,6 +575,14 @@ def assign_roles(grid: dict[tuple[int, int], Cell], header_rows: list[int],
             if any("массаметаллапоэлемент" in sk or "поэлемент" in sk or "элементамконстр" in sk
                    or _close_prefix(sk, "массаметаллапоэлементам") for sk in sks):
                 element_range = (cell.col, cell.col + cell.col_span - 1)
+    # Иногда верхняя объединённая подпись заходит и над колонкой итога.
+    # Нижний уровень шапки однозначно отделяет «Общая масса, т» от элементов.
+    if element_range:
+        start, end = element_range
+        for c in range(start + 1, end + 1):
+            if any(pat in skeleton(titles[c]) for pat in ("общаямасса", "общаямасс")):
+                element_range = (start, c - 1)
+                break
     for c in range(n_cols):
         role = ""
         sk = skeleton(titles[c])

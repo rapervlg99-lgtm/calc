@@ -17,6 +17,7 @@
 import type { RollMark } from '../types/api'
 import type { Job, MassSource, OgzRow, RowStatus } from '../types/ogz'
 import { buildRollIndex, markAliases } from './prefillMapper'
+import { sourceRollsForGost } from './rollCatalog'
 
 export interface OcrpdfColumn {
   index: number
@@ -145,9 +146,9 @@ const TRAILING_GLYPH_DESIGNATION_RE =
 
 export function cleanMark(size: string | null | undefined): string {
   let s = String(size || '').trim()
-  // «Гн.□100х5» / «Гн 100х5» — гнутый профиль: префикс не часть размера,
-  // в справочнике квадратная труба записана как «100 x 5»
+  // Префиксы «Гн.» и «Тр.» обозначают вид профиля, но не входят в размер.
   s = s.replace(/^Гн\.?\s*/iu, '')
+  s = s.replace(/^Тр\.?\s*(?=\d)/iu, '')
   s = s.replace(/^[□∟⌶ΙI|L\[\]]\s*(?=[\d])/u, '')
   s = s.replace(/^[□∟⌶]\s*/u, '')
   s = s.replace(/\s*(?:мм|mm)$/i, '')
@@ -188,9 +189,10 @@ export type ProfileCategory =
   | 'tryba_es_kvadr' | 'tryba_es_pr' | 'tryba_es_krug' | 'tryba_vgp' | 'tavr' | ''
 
 const GOST_RULES: [ProfileCategory, string][] = [
-  ['balka', '57837'], ['balka', '26020'], ['balka', '8239'], ['balka', 'асчм'],
+  ['balka', '35087'], ['balka', '19425'], ['balka', '57837'], ['balka', '26020'], ['balka', '8239'], ['balka', 'асчм'],
   ['ygolok', '8509'], ['ygolok', '8510'], ['ygolok_gnyt', '19771'], ['ygolok_gnyt', '19772'],
-  ['shveller', '8240'], ['shveller', '5267'], ['tryba_es_kvadr', '30245'], ['tryba_vgp', '3262']
+  ['shveller', '8240'], ['shveller', '5267'], ['shveller_gnyt', '8278'], ['shveller_gnyt', '8281'],
+  ['tryba_es_krug', '33228'], ['tryba_es_kvadr', '8639'], ['tryba_es_kvadr', '30245'], ['tryba_vgp', '3262']
 ]
 
 /** «AхBхt» — три размера замкнутого гнутого профиля (любой знак умножения). */
@@ -221,6 +223,10 @@ export function profileCategory(group: string, gost: string, mark: string): Prof
   // «Трубы стальные …» без уточнения формы — круглые (электросварные/бесшовные)
   if (n.includes('труб')) return 'tryba_es_krug'
   const g = String(gost || '').toLowerCase() + ' ' + n
+  if (g.includes('32931')) {
+    const sizes = TUBE_DIMS_RE.exec(String(mark || '').trim())
+    return sizes && sizes[1] !== sizes[2] ? 'tryba_es_pr' : 'tryba_es_kvadr'
+  }
   for (const [cat, code] of GOST_RULES) if (g.includes(code)) return cat
   const m = handbookKey(mark)
   if (/^\d+(?:\.\d+)?[БШКМД]\d*$/.test(m)) return 'balka'
@@ -248,6 +254,10 @@ export function rollMarkCandidates(category: ProfileCategory, mark: string): str
   if (m && (category === 'tryba_es_kvadr' || category === 'tryba_es_pr') && m[1] === m[2]) {
     out.push(`${m[1]}х${m[3]}`)   // квадратная труба в сортаменте — «200 x 7»
   }
+  if (category === 'tryba_es_kvadr') {
+    const square = /^(\d+(?:[.,]\d+)?)\s*[xх×*]\s*(\d+(?:[.,]\d+)?)$/i.exec(clean)
+    if (square) out.push(`${square[1]}х${square[1]}х${square[2]}`)
+  }
   return out
 }
 
@@ -261,7 +271,7 @@ export function constructionName(key: string): string {
 export const SHAPES_BY_CATEGORY: Record<string, string[]> = {
   balka: ['I-beam_', 'I-beam_sm', 'I-beam_sl'],
   shveller: ['channel_', 'channel_sl'],
-  shveller_gnyt: ['channel_', 'channel_sl'],
+  shveller_gnyt: ['channel_', 'channel_sl', 'channel_bent', 'channel_unequal'],
   ygolok: ['corner_', 'corner_e', 'corner_ue'],
   ygolok_gnyt: ['corner_', 'corner_e', 'corner_ue'],
   tryba_es_kvadr: ['tube_sq'],
@@ -436,7 +446,7 @@ function shortGroup(group: string): string {
   // \b не знает кириллицы — границу слова ищем пробелом
   const m = /(?:^|\s)(ГОСТ|СТО|ТУ|EN|DIN)(?=\s|$)/i.exec(s)
   const cut = m ? m.index : -1
-  return (cut > 0 ? s.slice(0, cut) : s).trim() || 'Элемент'
+  return (cut > 0 ? s.slice(0, cut).replace(/\s+по$/i, '') : s).trim() || 'Элемент'
 }
 
 function tableHasSpec(t: OcrpdfTable): boolean {
@@ -459,8 +469,20 @@ export function resolveMassPerMeter(
   group: string,
   handbook: Map<string, number> | undefined,
   roll: RollMark[],
-  index: Map<string, RollMark> | undefined
+  index: Map<string, RollMark> | undefined,
+  gostProfile = ''
 ): { mpm: number | null; source: MassSource | '' } {
+  const sourcePool = sourceRollsForGost(roll, gostProfile)
+  if (sourcePool.length) {
+    const shapes = SHAPES_BY_CATEGORY[category]
+    const pool = shapes ? sourcePool.filter((r) => shapes.includes(r.shape)) : sourcePool
+    const candidates = new Set(rollMarkCandidates(category, mark).flatMap(markAliases))
+    const hits = pool.filter((r) => markAliases(r.label).some((a) => candidates.has(a)))
+    if (hits.length === 1 && hits[0].massPerMeter) return { mpm: hits[0].massPerMeter, source: 'cache' }
+    // Missing or ambiguous marks in a known standard require manual review.
+    // Do not fall back to an identically named mark from another standard.
+    return { mpm: null, source: '' }
+  }
   const hb = lookupHandbook(handbook, category, mark)
   if (hb && hb > 0) return { mpm: hb, source: 'cache' }
   if (roll.length) {
@@ -475,8 +497,8 @@ export function resolveMassPerMeter(
       if (hit) break
     }
     if (hit) {
-      const mpm = massPerMeterFromDims(hit.shape, hit.dims)
-      if (mpm) return { mpm, source: 'formula' }
+      const mpm = hit.massPerMeter || massPerMeterFromDims(hit.shape, hit.dims)
+      if (mpm) return { mpm, source: hit.massPerMeter ? 'cache' : 'formula' }
     }
   }
   // круглый профиль по диаметру («RD18», «Ø18», «⌀18»): в справочнике
@@ -553,9 +575,13 @@ export function buildJobFromOcr(res: OcrpdfResult, opts: BuildOptions = {}): Bui
       // стали (27772) сюда не подставляем даже когда свой не прочитался:
       // это стандарт стали, а не сортамента, и он ломает подбор по справочнику.
       // Единственное поле `standards` — формат старого ocrpdf без разделения.
-      const gost = r.profile_standards !== undefined
+      const profileStandard = r.profile_standards !== undefined
         ? (r.profile_standards[0] || '')
         : ((r.standards && r.standards[0]) || '')
+      // DIN/EN остаются в названии OCR, если извлекатель ГОСТ не распознал их
+      // как отдельный стандарт. Не подменяем ими стандарт марки стали.
+      const foreignStandard = /(?:^|\s)((?:DIN|EN)\s+\d+(?:[.\-]\d+)*)\b/i.exec(r.profile_group || '')?.[1] || ''
+      const gost = profileStandard || foreignStandard
       const groupName = shortGroup(r.profile_group)
 
       for (const m of masses) {
@@ -566,7 +592,7 @@ export function buildJobFromOcr(res: OcrpdfResult, opts: BuildOptions = {}): Bui
           profileMark: mark,
           profileRaw: String(r.profile_size || ''),
           gostProfile: gost,
-          steelGrade: String(r.steel_grade || '').split('\n')[0].trim(),
+          steelGrade: String(r.steel_grade || '').split('\n')[0].trim().replace(/\s+по$/i, ''),
           ppNumber: r.position == null ? '' : String(r.position),
           construction: m.construction,
           mass: massKg,
@@ -598,7 +624,7 @@ export function buildJobFromOcr(res: OcrpdfResult, opts: BuildOptions = {}): Bui
           continue
         }
         const category = profileCategory(r.profile_group, gost, String(r.profile_size || ''))
-        let { mpm, source } = resolveMassPerMeter(mark, category, r.profile_group, handbook, roll, index)
+        let { mpm, source } = resolveMassPerMeter(mark, category, r.profile_group, handbook, roll, index, gost)
         let markUncertain = false
         // OCR не разобрал букву серии («2011»): пробуем варианты по справочнику.
         // Единственный найденный — подставляем с пометкой «Требует проверки»;
@@ -607,7 +633,7 @@ export function buildJobFromOcr(res: OcrpdfResult, opts: BuildOptions = {}): Bui
         if (!mpm && rawCands.length) {
           const resolved = rawCands.map((c) => ({
             mark: c,
-            ...resolveMassPerMeter(c, category, r.profile_group, handbook, roll, index)
+            ...resolveMassPerMeter(c, category, r.profile_group, handbook, roll, index, gost)
           }))
           const found = resolved.filter((c) => c.mpm && c.mpm > 0)
           if (found.length === 1) {

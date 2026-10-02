@@ -28,7 +28,8 @@ from .fontfix import build_font_repairs, looks_broken
 from .glyph_ocr import GlyphLayer
 from .models import PageInfo, Table
 from .ocr_backends import pick_backend
-from .normalizer import (apply_mass_unit, fill_positions, fix_profile_series, fix_sheet_thickness,
+from .normalizer import (apply_mass_unit, fill_positions, fix_mass_by_grade_labels,
+                         fix_position_glyphs, fix_profile_series, fix_sheet_thickness,
                          resolve_mass_unit)
 from .structure import (Column, LogicalRow, assign_roles, build_rows, classify_table,
                         detect_header_rows, find_titles, group_context,
@@ -411,6 +412,7 @@ def process_page(doc: fitz.Document, index: int, opts: Options,
         fix_profile_series(rows)
         # «m», «(-» в графе № п.п. — номер восстанавливается по соседним строкам
         fill_positions(rows)
+        fix_position_glyphs(rows)
 
         def _read_strip(bbox, _reader=reader, _page=index + 1):
             return _reader.read(bbox, -1, -1, "text", 1, 1, _page,
@@ -421,6 +423,8 @@ def process_page(doc: fitz.Document, index: int, opts: Options,
         sections = split_sections(rows) if table_kind == "spec_main" \
             else [("generic", rows)]
         for sec_kind, sec_rows in sections:
+            if sec_kind == "mass_by_grade":
+                fix_mass_by_grade_labels(sec_rows)
             table_index += 1
             uniq: list = []
             seen: set[int] = set()

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import TnCard from '../ui/TnCard.vue'
 import TnButton from '../ui/TnButton.vue'
 import TnInput from '../ui/TnInput.vue'
@@ -12,6 +12,7 @@ import SidesPicker from './SidesPicker.vue'
 import type { DictsResponse, ElementInput, ElementResult, HeatedSides } from '../../types/api'
 import { elementDisplayName } from '../../utils/constructionLabel'
 import { fmt, resultDelta, resultOutput } from '../../utils/calcView'
+import { assortmentLabel, LEGACY_STANDARD, rollsForShape, rollsForStandard, standardOptions } from '../../utils/rollCatalog'
 
 /** `_uid` — клиентский идентификатор; в API уходит как id элемента, чтобы сопоставлять результаты. */
 export type FormElement = ElementInput & { profileMiss?: boolean; _uid?: number }
@@ -35,23 +36,29 @@ const emit = defineEmits<{
   (e: 'dragstart', ev: DragEvent): void
 }>()
 
-const shapeGroups = computed(() =>
-  props.dicts.profiles.map((f) => ({
-    label: f.label,
-    options: f.shapes.map((s) => ({ value: s.id, label: s.label }))
-  }))
+/** Плоский список профилей в порядке словаря — без заголовков семейств (двутавр, швеллер…). */
+const shapeOptions = computed(() =>
+  props.dicts.profiles.flatMap((f) => f.shapes.map((s) => ({ value: s.id, label: s.label })))
 )
 
 function rollsFor(shape: string) {
-  const base = shape.replace(/_$/, '')
-  return props.dicts.roll.filter((r) => {
-    if (!r.shape) return true
-    return r.shape === shape || r.shape.startsWith(base) || shape.startsWith(r.shape.replace(/_$/, ''))
-  })
+  return rollsForShape(props.dicts.roll, shape)
+}
+const gostOptions = computed(() => standardOptions(rollsFor(props.el.shape)))
+const gost = ref('')
+watch(() => [props.el.shape, props.el.rollId, props.dicts.roll] as const, () => {
+  const selected = props.dicts.roll.find((r) => r.id === props.el.rollId && r.shape === props.el.shape)
+  if (selected) gost.value = selected.standard || LEGACY_STANDARD
+  else if (!gostOptions.value.some((o) => o.value === gost.value)) gost.value = gostOptions.value[0]?.value || LEGACY_STANDARD
+}, { immediate: true })
+function onGost(value: string) {
+  gost.value = value
+  const selected = props.dicts.roll.find((r) => r.id === props.el.rollId && r.shape === props.el.shape)
+  if (selected && (selected.standard || LEGACY_STANDARD) !== value) props.el.rollId = undefined
 }
 const rollOptions = computed(() => [
   { value: MANUAL, label: 'Ручные размеры' },
-  ...rollsFor(props.el.shape).map((r) => ({ value: r.id, label: r.label || r.id }))
+  ...rollsForStandard(rollsFor(props.el.shape), gost.value).map((r) => ({ value: r.id, label: assortmentLabel(r) }))
 ])
 const rollValue = computed(() => props.el.rollId || MANUAL)
 const manual = computed(() => !props.el.rollId)
@@ -63,7 +70,7 @@ function onRollPick(id: string) {
     return
   }
   props.el.rollId = id
-  const mark = props.dicts.roll.find((r) => r.id === id)
+  const mark = rollsForStandard(rollsFor(props.el.shape), gost.value).find((r) => r.id === id)
   if (mark?.dims) props.el.dims = { ...mark.dims }
   if (mark?.shape) props.el.shape = mark.shape
   props.el.profileMiss = false
@@ -72,6 +79,7 @@ function onRollPick(id: string) {
   }
 }
 function onShape(id: string) {
+  gost.value = ''
   props.el.shape = id
   // сортамент другого профиля больше не подходит
   if (props.el.rollId && !rollsFor(id).some((r) => r.id === props.el.rollId)) props.el.rollId = undefined
@@ -134,8 +142,9 @@ const htOptions = computed(() => opts('ht_level').map((o) => ({ value: o.value, 
 
         <div class="calc-el-fields">
           <div class="calc-grid-4">
-            <TnSelect label="Профиль" required :model-value="el.shape" :groups="shapeGroups" @update:model-value="onShape" />
-            <TnSearchSelect label="Сортамент ГОСТ" :model-value="rollValue" :options="rollOptions" search-placeholder="Найти марку" @update:model-value="onRollPick" />
+            <TnSelect label="Профиль" required :model-value="el.shape" :options="shapeOptions" @update:model-value="onShape" />
+            <TnSelect label="ГОСТ" :model-value="gost" :options="gostOptions" @update:model-value="onGost" />
+            <TnSearchSelect label="Сортамент" :model-value="rollValue" :options="rollOptions" search-placeholder="Найти марку" @update:model-value="onRollPick" />
             <TnSelect label="Тип конструкции" required :model-value="el.frType" :options="opts('fr_type')" @update:model-value="(v) => (el.frType = v)" />
             <TnSelect label="Предел огнестойкости R" required :model-value="String(el.htLevel)" :options="htOptions" @update:model-value="(v) => (el.htLevel = Number(v))" />
           </div>
@@ -146,6 +155,7 @@ const htOptions = computed(() => opts('ht_level').map((o) => ({ value: o.value, 
             <TnNumberInput label="s, мм" :model-value="dim('s')" @update:model-value="(v) => setDim('s', v)" />
             <TnNumberInput label="t, мм" :model-value="dim('t')" @update:model-value="(v) => setDim('t', v)" />
             <TnNumberInput label="R, мм" :model-value="dim('R')" @update:model-value="(v) => setDim('R', v)" />
+            <TnNumberInput v-if="el.shape === 'channel_unequal'" label="b₁, мм" :model-value="dim('b1')" @update:model-value="(v) => setDim('b1', v)" />
           </div>
 
           <div class="calc-grid-4">

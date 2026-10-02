@@ -3,3 +3,5 @@ __pycache__/
 .venv/
 result/
 work/
+tmp/
+.pytest_cache/

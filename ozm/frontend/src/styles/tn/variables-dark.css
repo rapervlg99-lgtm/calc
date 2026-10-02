@@ -1,0 +1,91 @@
+.tn-dark-theme {
+  --content-primary-a-enabled: var(--neutral-15);
+  --content-primary-a-hover: var(--neutral-30);
+  --content-primary-a-pressed: var(--neutral-25);
+  --content-primary-a-disabled: var(--neutral-75);
+
+  --content-primary-b-enabled: var(--neutral-15);
+  --content-primary-b-hover: var(--neutral-30);
+  --content-primary-b-pressed: var(--neutral-25);
+  --content-primary-b-disabled: var(--neutral-75);
+
+  --content-secondary-enabled: var(--neutral-60);
+  --content-secondary-hover: var(--neutral-65);
+  --content-secondary-pressed: var(--neutral-75);
+  --content-secondary-disabled: var(--neutral-75);
+
+  --content-tertiary-enabled: var(--neutral-65);
+  --content-tertiary-hover: var(--neutral-55);
+  --content-tertiary-pressed: var(--neutral-70);
+  --content-tertiary-disabled: var(--neutral-75);
+
+  --content-accent-enabled: var(--red-65);
+  --content-accent-hover: var(--red-75);
+  --content-accent-pressed: var(--red-80);
+  --content-accent-disabled: var(--neutral-75);
+
+  --content-system-neutral: var(--neutral-30);
+
+  --content-action-enabled: var(--blue-50);
+  --content-action-hover: var(--blue-60);
+  --content-action-pressed: var(--blue-70);
+  --content-action-disabled: var(--neutral-75);
+
+  --background-primary-a-enabled: var(--neutral-100);
+  --background-primary-a-hover: var(--neutral-95);
+  --background-primary-a-pressed: var(--neutral-90);
+  --background-primary-a-disabled: var(--neutral-90);
+
+  --background-primary-b-enabled: var(--neutral-40);
+  --background-primary-b-hover: var(--neutral-50);
+  --background-primary-b-pressed: var(--neutral-55);
+  --background-primary-b-disabled: var(--neutral-90);
+
+  --background-secondary-a-enabled: var(--neutral-90);
+  --background-secondary-a-hover: var(--neutral-85);
+  --background-secondary-a-pressed: var(--neutral-95);
+  --background-secondary-a-disabled: var(--neutral-90);
+
+  --background-secondary-b-enabled: var(--neutral-90);
+  --background-secondary-b-hover: var(--neutral-85);
+  --background-secondary-b-pressed: var(--neutral-95);
+  --background-secondary-b-disabled: var(--neutral-90);
+
+  --background-secondary-enabled: var(--background-secondary-a-enabled);
+  --background-secondary-hover: var(--background-secondary-a-hover);
+  --background-secondary-pressed: var(--background-secondary-a-pressed);
+  --background-secondary-disabled: var(--background-secondary-a-disabled);
+
+  --background-tertiary-enabled: var(--neutral-80);
+  --background-tertiary-hover: var(--neutral-75);
+  --background-tertiary-pressed: var(--neutral-80);
+  --background-tertiary-disabled: var(--neutral-90);
+
+  --background-accent-enabled: var(--red-65);
+  --background-accent-hover: var(--red-75);
+  --background-accent-pressed: var(--red-80);
+  --background-accent-disabled: var(--neutral-90);
+
+  --border-primary-a-enabled: var(--neutral-white);
+  --border-primary-a-hover: var(--neutral-20);
+  --border-primary-a-pressed: var(--neutral-25);
+  --border-primary-a-disabled: var(--neutral-90);
+
+  --border-primary-b-enabled: var(--neutral-75);
+  --border-primary-b-hover: var(--neutral-70);
+  --border-primary-b-pressed: var(--neutral-80);
+  --border-primary-b-disabled: var(--neutral-90);
+
+  --border-secondary-enabled: var(--neutral-80);
+  --border-secondary-hover: var(--neutral-75);
+  --border-secondary-pressed: var(--neutral-75);
+  --border-secondary-disabled: var(--neutral-80);
+
+  --border-accent-disabled: var(--neutral-90);
+
+  --shadow-small: 0 0 0 1px var(--border-secondary-enabled);
+}
+
+.tn-dark-theme_no-transition * {
+  transition: none !important;
+}

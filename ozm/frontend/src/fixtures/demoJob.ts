@@ -130,6 +130,7 @@ export function demoPrefill(job: Job): PrefillPayload {
       )
       .map((r) => ({
         profileMark: r.profileMark,
+        gostProfile: r.gostProfile,
         construction: r.construction,
         lengthM: r.lengthM,
         heatingSides: r.heatingSides,

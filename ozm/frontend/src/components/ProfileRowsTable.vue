@@ -88,10 +88,9 @@
                 <tr>
                   <th class="prt__check" aria-label="Выбор"></th>
                   <th class="prt__idx">№</th>
-                  <th>Наименование</th>
-                  <th>Наименование профиля</th>
+                  <th>Номер профиля</th>
+                  <th>Наименование профиля, ГОСТ</th>
                   <th>Элемент конструкции</th>
-                  <th>ГОСТ профиля</th>
                   <th class="prt__num">Уд. масса, кг/м</th>
                   <th class="prt__num">Длина, м</th>
                   <th>Статус</th>
@@ -173,10 +172,9 @@
             <tr>
               <th class="prt__check" aria-label="Выбор"></th>
               <th class="prt__idx">№</th>
-              <th>Наименование</th>
-              <th>Наименование профиля</th>
+              <th>Номер профиля</th>
+              <th>Наименование профиля, ГОСТ</th>
               <th>Элемент конструкции</th>
-              <th>ГОСТ профиля</th>
               <th class="prt__num">Уд. масса, кг/м</th>
               <th class="prt__num">Длина, м</th>
               <th
@@ -617,7 +615,7 @@ defineExpose({ getGroupsForPrefill });
 }
 
 .prt__groups-title {
-  font-weight: 600;
+  font-weight: var(--font-weight-accent);
   color: var(--content-primary-a-enabled);
 }
 
@@ -685,7 +683,7 @@ defineExpose({ getGroupsForPrefill });
 .prt__group-name {
   min-width: 120px;
   flex: 1;
-  font-weight: 600;
+  font-weight: var(--font-weight-accent);
 }
 
 .prt__group-input {
@@ -702,7 +700,7 @@ defineExpose({ getGroupsForPrefill });
 }
 
 .prt__group-count {
-  font-size: 12px;
+  font-size: var(--font-size-label-medium);
   color: var(--content-secondary-enabled);
 }
 
@@ -717,7 +715,7 @@ defineExpose({ getGroupsForPrefill });
 
 .prt__list-title {
   margin: 0;
-  font-weight: 600;
+  font-weight: var(--font-weight-accent);
   color: var(--content-primary-a-enabled);
 }
 
@@ -748,19 +746,33 @@ defineExpose({ getGroupsForPrefill });
 .prt__table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 14px;
+  font-size: var(--font-size-body-small);
 }
 
 .prt__table :deep(th),
 .prt__table :deep(td) {
-  padding: 8px 12px;
+  padding: 8px 8px;
   text-align: left;
   white-space: nowrap;
   border-bottom: 1px solid var(--border-secondary-enabled);
 }
 
+/* подписи шапки переносятся на две строки — иначе «Наименование профиля, ГОСТ»
+   и «Элемент конструкции» одни раздвигают таблицу за 1440 px */
+.prt__table :deep(th) {
+  white-space: normal;
+  vertical-align: bottom;
+  line-height: 18px;
+  font-size: 13px;
+  color: var(--content-secondary-enabled);
+}
+
+.prt__table :deep(th.prt__num) {
+  min-width: 84px;      /* «Уд. масса, кг/м» — две строки, не три */
+}
+
 .prt__table th {
-  font-weight: 600;
+  font-weight: var(--font-weight-accent);
   color: var(--content-secondary-enabled);
 }
 

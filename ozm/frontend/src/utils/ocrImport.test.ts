@@ -94,6 +94,8 @@ describe('ocrImport helpers', () => {
     expect(cleanMark('Ι 20Б1')).toBe('20Б1')
     expect(cleanMark('20Б1')).toBe('20Б1')
     expect(cleanMark('δ=4 мм')).toBe('δ=4')
+    expect(cleanMark('Тр.120х5')).toBe('120х5')
+    expect(cleanMark('Тр.32х3')).toBe('32х3')
   })
 
   it('builds handbook keys like sortament.Normalize', () => {
@@ -392,6 +394,48 @@ describe('buildJobFromOcr', () => {
     const { job, notes } = buildJobFromOcr(empty)
     expect(job.profileRows).toHaveLength(0)
     expect(notes[0]).toMatch(/нет строк/)
+  })
+
+  it('imports the last PDF square and round tubes with catalog masses', () => {
+    const res = sample()
+    res.tables[0].checks = []
+    res.tables[0].rows = [
+      { row: 12, kind: 'data', position: 12,
+        profile_group: 'Профили стальные гнутые замкнутые ГОСТ 30245-2003',
+        profile_standards: ['ГОСТ 30245-2003'], steel_grade: 'С255-5', standards: [],
+        profile_size: 'Тр.120х5', elements: { 'Фермы': 4.6 }, total: 4.6, validation: 'ok' },
+      { row: 18, kind: 'data', position: 18,
+        profile_group: 'Трубы стальные электросварные прямошовные ГОСТ 10704-91',
+        profile_standards: ['ГОСТ 10704-91'], steel_grade: 'С255-5', standards: [],
+        profile_size: 'Тр.16х1.6', elements: { 'Фермы': 0.1 }, total: 0.1, validation: 'ok' }
+    ]
+    const roll: RollMark[] = [
+      { id: 'square-120', shape: 'tube_sq', label: '□120×120×5',
+        dims: { A: 120, s: 5 }, standard: 'ГОСТ 30245-2003', massPerMeter: 17.55 }
+    ]
+    const handbook = new Map([['tryba_es_krug/16Х1.6', 0.568]])
+    const { job } = buildJobFromOcr(res, { roll, handbook })
+    expect(rollMarkCandidates('tryba_es_kvadr', '120х5')).toContain('120х120х5')
+    expect(job.profileRows.map((r) => r.profileMark)).toEqual(['120х5', '16х1.6'])
+    expect(job.profileRows[0].massPerMeter).toBe(17.55)
+    expect(job.profileRows[0].lengthM).toBeCloseTo(4600 / 17.55, 2)
+    expect(job.profileRows[1].massPerMeter).toBe(0.568)
+    expect(job.profileRows[1].lengthM).toBeCloseTo(100 / 0.568, 2)
+  })
+
+  it('keeps the rail DIN standard separate from the steel GOST', () => {
+    const res = sample()
+    res.tables[0].checks = []
+    res.tables[0].rows = [{ row: 22, kind: 'data', position: 20,
+      profile_group: 'Рельс подкрановый по DIN 536-1', profile_standards: [],
+      steel_grade: 'Сталь 70 по', standards: ['ГОСТ 53866-2010'],
+      steel_standards: ['ГОСТ 53866-2010'], profile_size: 'А45',
+      elements: { 'Фермы': 0.4 }, total: 0.4, validation: 'ok' }]
+    const rail = buildJobFromOcr(res).job.profileRows[0]
+    expect(rail.name).toBe('Рельс подкрановый')
+    expect(rail.gostProfile).toBe('DIN 536-1')
+    expect(rail.steelGrade).toBe('Сталь 70')
+    expect(rail.status).toBe('Нужен ввод массы')
   })
 })
 

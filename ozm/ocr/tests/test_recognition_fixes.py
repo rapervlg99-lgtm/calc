@@ -620,6 +620,91 @@ def test_channel_bare_number_confirmed_by_alt_engine():
     assert [r.cells["profile_size"].text for r in rows] == ["16П", "16П", "24", "6,5П"]
 
 
+def test_last_pdf_channel_and_tube_readings():
+    from ocrpdf.normalizer import fix_profile_series
+
+    channels = _rows_in_group("Швеллеры стальные горячекатаные ГОСТ 8240-97",
+                              [("24", "C241]"), ("24", "")])
+    assert fix_profile_series(channels) == 1
+    assert [r.cells["profile_size"].text for r in channels] == ["24П", "24"]
+    assert channels[0].cells["profile_size"].requires_review
+
+    tubes = _rows_in_group("Трубы стальные электросварные прямошовные ГОСТ 10704-91",
+                           [("Тр3dd", "Tp.32x3"), ("Тр3dd", "Tp.42x3")])
+    for row in tubes:
+        row.cells["profile_size"].confidence = 0.16
+    assert fix_profile_series(tubes) == 1
+    assert [r.cells["profile_size"].text for r in tubes] == ["Тр.32х3", "Тр3dd"]
+    assert tubes[0].cells["profile_size"].requires_review
+
+
+def test_last_pdf_generic_closed_profile_and_grade():
+    from ocrpdf.normalizer import fix_mass_by_grade_labels
+
+    group = normalize_cell(Cell(row=10, col=0,
+                                text="Mpodunu\nстальные\nгнутые\nзамкнутые по\nгост\n30245-2003",
+                                source="ocr", confidence=0.69), "profile_group")
+    assert group.text.startswith("Профили стальные гнутые замкнутые")
+    assert "прямоугол" not in group.text.lower()
+    assert "30245-2003" in group.text
+    assert group.requires_review
+
+    grade = Cell(row=42, col=0, text="10°", source="ocr", alt_text="70", confidence=0.48)
+    rows = [LogicalRow(row=42, kind="data", cells={"profile_group": grade})]
+    assert fix_mass_by_grade_labels(rows) == 1
+    assert grade.text == "70" and grade.requires_review
+    alternate = Cell(row=42, col=0, text="ШИ", source="ocr", alt_text="70", confidence=0.49)
+    assert fix_mass_by_grade_labels([LogicalRow(row=42, kind="data", cells={"profile_group": alternate})]) == 1
+    assert alternate.text == "70" and alternate.requires_review
+
+
+def test_last_pdf_rail_and_steel_standard_text():
+    beam = normalize_cell(Cell(row=3, col=0,
+                               text="Дбутабры\nстальные\nгорячекатаные\nС\nNOPAANENbHbIMU\nгранями полок\n57837-2017",
+                               alt_text="byma6pbl cma/bHble 20pyeKαmQHble C nopα//e/bHbIMU 2PQHAMU nOAOK no「OCT P 57837-2017",
+                               source="ocr", confidence=0.44), "profile_group")
+    assert "ГОСТ Р 57837-2017" in beam.text
+    assert beam.requires_review
+
+    rail = normalize_cell(Cell(row=22, col=0, text="Рельс\nподкрановыц по\nDIN 536-1",
+                               alt_text="PenbC nodkpaHobbIu no DIN 536-1", source="ocr"), "profile_group")
+    assert rail.text == "Рельс\nподкрановый по\nDIN 536-1"
+    assert rail.requires_review
+
+    rail_grade = normalize_cell(Cell(row=22, col=1, text="Сталь 70 no\nГОСТ 53866-2010",
+                                     source="ocr"), "steel_grade")
+    assert rail_grade.text == "Сталь 70 по\nГОСТ 53866-2010"
+    assert rail_grade.requires_review
+
+    channel_grade = normalize_cell(Cell(row=10, col=1, text="(255-5\n27772-2015",
+                                        alt_text="C255-5 20p94eKamaHHblerOCT 27772-2015",
+                                        source="ocr"), "steel_grade")
+    assert channel_grade.text == "С255-5\nГОСТ 27772-2015"
+    assert channel_grade.requires_review
+
+
+def test_ibeam_glued_one_without_series_letter():
+    """«1404» (I40Ш4) и «13513» (I35Ш3): единица — значок, буквы серии нет или она
+    цифра; второй движок с «山»/«W» решает серию, без него — варианты."""
+    from ocrpdf.normalizer import fix_profile_series
+    rows = _rows_in_group("Двутавры стальные горячекатаные с параллельными гранями полок",
+                          [("1404", "I40山4"), ("13513", "I35W3"), ("1404", ""), ("1201", ""), ("100", "")])
+    fix_profile_series(rows)
+    sizes = [r.cells["profile_size"] for r in rows]
+    assert [s.text for s in sizes] == ["40Ш4", "35Ш3", "404", "201", "100"]
+    assert sizes[2].candidates == ["40Б4", "40Ш4", "40К4"]
+    assert sizes[3].candidates == ["20Б1", "20Ш1", "20К1"]
+
+
+def test_tube_size_separator_from_alt_engine():
+    """«Тр323» при «Tp.32x3» → «Тр.32х3»; без совпадения цифр не трогаем."""
+    from ocrpdf.normalizer import fix_profile_series
+    rows = _rows_in_group("Трубы стальные электросварные прямошовные\nГОСТ 10704-91",
+                          [("Тр323", "Tp.32x3"), ("Тр4833", "Tp.48.3x3"), ("Тр323", "Tp.42x3"), ("Тр.32х3", "")])
+    assert fix_profile_series(rows) == 2
+    assert [r.cells["profile_size"].text for r in rows] == ["Тр.32х3", "Тр.48,3х3", "Тр323", "Тр.32х3"]
+
+
 def test_ibeam_glued_glyph_one():
     """«I23Ш1» без пробела → «123Ш1»: высоты 123 нет, 23 есть — единица это значок."""
     from ocrpdf.normalizer import fix_profile_series

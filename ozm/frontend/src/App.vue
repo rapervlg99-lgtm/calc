@@ -16,13 +16,14 @@ const isRecognize = computed(() => route.path.startsWith('/recognize'))
           <span class="app-brand-product">Калькулятор огнезащиты</span>
         </span>
       </router-link>
-      <nav class="app-nav" aria-label="Разделы">
-        <router-link to="/" class="app-nav-link" :class="{ 'app-nav-link_active': !isRecognize }">Калькулятор</router-link>
-        <router-link to="/recognize" class="app-nav-link" :class="{ 'app-nav-link_active': isRecognize }">Распознавание таблиц ИД</router-link>
-      </nav>
     </div>
   </header>
   <main>
+    <!-- Разделы — вкладками в рабочей области, под шапкой, а не в самой шапке -->
+    <nav class="app-tabs" aria-label="Разделы">
+      <router-link to="/" class="app-tab" :class="{ 'app-tab_active': !isRecognize }">Калькулятор</router-link>
+      <router-link to="/recognize" class="app-tab" :class="{ 'app-tab_active': isRecognize }">Распознавание таблиц ИД</router-link>
+    </nav>
     <router-view />
   </main>
 </template>

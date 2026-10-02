@@ -205,8 +205,8 @@ const caption = computed(() => {
 }
 
 .hsp_compact {
-  min-width: 132px;
-  max-width: 200px;
+  min-width: 120px;
+  max-width: 136px;
 }
 
 .hsp__trigger {
@@ -229,7 +229,7 @@ const caption = computed(() => {
 .hsp_compact .hsp__trigger {
   height: 32px;
   padding: 0 8px;
-  font-size: 14px;
+  font-size: var(--font-size-body-small);
 }
 
 .hsp__trigger:hover,
@@ -271,7 +271,7 @@ const caption = computed(() => {
   gap: 8px;
   padding: 8px 10px;
   border-radius: 8px;
-  font-size: 14px;
+  font-size: var(--font-size-body-small);
   color: var(--content-primary-a-enabled);
   cursor: pointer;
   user-select: none;

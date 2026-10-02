@@ -171,7 +171,7 @@ onUnmounted(() => window.removeEventListener('message', onOcrMessage))
   align-items: center;
   justify-content: center;
   background: rgba(255, 255, 255, 0.75);
-  font-weight: 600;
+  font-weight: var(--font-weight-accent);
 }
 .ocr-hint {
   margin-top: 8px;
@@ -183,7 +183,7 @@ onUnmounted(() => window.removeEventListener('message', onOcrMessage))
   padding: 12px 16px;
   margin: 0 0 14px;
   border-radius: 8px;
-  font-size: 14px;
+  font-size: var(--font-size-body-small);
 }
 .ocr-import-error .muted {
   display: block;

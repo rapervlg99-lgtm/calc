@@ -433,6 +433,43 @@ def _separator_consts(rl: list[Ruling], span_min: float, tol: float) -> list[flo
     return out
 
 
+def _aligned_separators(rl: list[Ruling], consts: list[float], perp: list[float],
+                        tol: float, min_frac: float = 0.8) -> list[float]:
+    """Короткие линии, чьи концы лежат на уже найденных перпендикулярных
+    разделителях, — тоже разделители (только между своими колонками/строками).
+
+    На листе 88-06-2026-КМ под объединённой «Масса металла, т» стоят две
+    повёрнутые подписи «Конструкции этажерки» и «Ограждение»; линия между ними
+    и объединённой ячейкой тянется на две графы (0,2 ширины таблицы) и по
+    порогу 0,3 отбрасывалась — обе подписи сливались с верхней ячейкой в одну
+    высокую, а имена элементов превращались в «масса» и «металла, м».
+    Подчёркивания и штрихи текста на разделители не попадают: их концы не
+    совпадают с линиями колонок, а длина меньше шага сетки.
+    """
+    if not rl or len(perp) < 2:
+        return consts
+    pitch = min(perp[i + 1] - perp[i] for i in range(len(perp) - 1))
+    lo, hi = consts[0], consts[-1]
+    out = list(consts)
+    for c in _cluster([r.const for r in rl], tol):
+        if c <= lo + tol or c >= hi - tol or any(abs(c - x) <= tol for x in out):
+            continue
+        segs = sorted((r.a, r.b) for r in rl if abs(r.const - c) <= tol)
+        merged: list[list[float]] = []
+        for a, b in segs:
+            if merged and a <= merged[-1][1] + tol:
+                merged[-1][1] = max(merged[-1][1], b)
+            else:
+                merged.append([a, b])
+        for a, b in merged:
+            on_a = any(abs(a - x) <= 2 * tol for x in perp)
+            on_b = any(abs(b - x) <= 2 * tol for x in perp)
+            if on_a and on_b and b - a >= min_frac * pitch:
+                out.append(c)
+                break
+    return sorted(out)
+
+
 def _build_grid(gh: list[Ruling], gv: list[Ruling],
                 bbox: tuple[float, float, float, float], tol: float = 1.5,
                 span_ratio: float = 0.30, edge_ratio: float = 0.70) -> TableBlock:
@@ -448,6 +485,9 @@ def _build_grid(gh: list[Ruling], gv: list[Ruling],
     ys = _separator_consts(gh, span_ratio * W, tol)
     if len(xs) < 2 or len(ys) < 2:
         return TableBlock(bbox, xs, ys, [], 0, 0)
+    # короткие линии внутри объединённых областей, снятые на колонки/строки
+    ys = _aligned_separators(gh, ys, xs, tol)
+    xs = _aligned_separators(gv, xs, ys, tol)
 
     # ненарисованные внешние границы
     lx, rx = _implied_bounds(long_h, xs[0], xs[-1], tol)

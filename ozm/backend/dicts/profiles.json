@@ -35,6 +35,16 @@
         "id": "channel_sl",
         "label": "швеллер с уклоном полок",
         "picture": "channel_sl"
+      },
+      {
+        "id": "channel_bent",
+        "label": "швеллер гнутый равнополочный",
+        "picture": "channel_"
+      },
+      {
+        "id": "channel_unequal",
+        "label": "швеллер гнутый неравнополочный",
+        "picture": "channel_unequal"
       }
     ]
   },

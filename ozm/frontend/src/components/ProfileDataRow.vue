@@ -51,9 +51,13 @@
         </button>
       </div>
     </td>
-    <td :title="row.name || ''">{{ familyLabel }}</td>
+    <!-- вид профиля и ГОСТ сортамента в одной ячейке: две строки вместо двух
+         колонок, иначе таблица не помещается в 1440 px -->
+    <td class="pdr__family" :title="row.name || ''">
+      <div>{{ familyLabel }}</div>
+      <div class="pdr__gost">{{ row.gostProfile || "—" }}</div>
+    </td>
     <td class="pdr__construction" :title="row.construction || ''">{{ constructionLabel }}</td>
-    <td>{{ row.gostProfile || "—" }}</td>
     <td class="pdr__num">
       {{ row.massPerMeter ? num(row.massPerMeter) : "—" }}
     </td>
@@ -140,9 +144,10 @@
       </select>
     </td>
     <td class="pdr__actions" @mousedown.stop>
-      <button type="button" class="btn-ghost btn-sm" aria-label="Редактировать строку" @click="$emit('edit', row)">Изм.</button>
-      <button type="button" class="btn-ghost btn-sm" aria-label="Копировать строку" @click="$emit('copy', row)">Копир.</button>
-      <button type="button" class="btn-ghost btn-sm pdr__del" aria-label="Удалить строку" @click="$emit('remove', row)">Удал.</button>
+      <!-- иконки вместо подписей: три текстовые кнопки занимали 210 px -->
+      <button type="button" class="pdr__act" title="Редактировать" aria-label="Редактировать строку" @click="$emit('edit', row)"><TnIcon name="edit" :size="20" /></button>
+      <button type="button" class="pdr__act" title="Копировать" aria-label="Копировать строку" @click="$emit('copy', row)"><TnIcon name="copy" :size="20" /></button>
+      <button type="button" class="pdr__act pdr__del" title="Удалить" aria-label="Удалить строку" @click="$emit('remove', row)"><TnIcon name="delete" :size="20" /></button>
     </td>
   </tr>
 </template>
@@ -152,6 +157,7 @@ import { computed, ref, watch } from "vue";
 import HeatingSidesPicker from "./HeatingSidesPicker.vue";
 import ProfileMarkInput from "./ProfileMarkInput.vue";
 import StatusTag from "./StatusTag.vue";
+import TnIcon from "./ui/TnIcon.vue";
 import { bearingTypeChoices } from "@/utils/bearingTypes";
 import { coatingTypeChoices } from "@/utils/coatingTypes";
 import { profileCategory, profileFamilyLabel } from "@/utils/ocrImport";
@@ -257,23 +263,62 @@ const needsAttention = computed(
   font: inherit;
 }
 
+/* Ширины подобраны так, чтобы 13 колонок помещались в контейнер 1392 px
+   (экран 1440): длинные подписи в select обрезаются, полный текст — в списке. */
 .pdr__length {
-  width: 88px;
+  width: 72px;
   text-align: right;
 }
 
 .pdr__select {
-  width: 96px;
+  width: 88px;
   cursor: pointer;
 }
 
 .pdr__bearing {
-  width: 140px;
+  width: 118px;
 }
 
 .pdr__coating {
-  width: 220px;
+  width: 144px;
   max-width: 28vw;
+}
+
+.pdr__family {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pdr__gost {
+  margin-top: 2px;
+  font-size: var(--font-size-label-medium);
+  color: var(--content-secondary-enabled);
+}
+
+.pdr__construction {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pdr__act {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--content-secondary-enabled);
+  cursor: pointer;
+}
+
+.pdr__act:hover {
+  background: var(--background-tertiary-hover);
+  color: var(--content-primary-a-enabled);
 }
 
 .pdr__missing {
@@ -282,7 +327,7 @@ const needsAttention = computed(
 
 .pdr__raw {
   margin-top: 2px;
-  font-size: 12px;
+  font-size: var(--font-size-label-medium);
   color: var(--content-secondary-enabled);
   white-space: nowrap;
 }
@@ -293,7 +338,7 @@ const needsAttention = computed(
   align-items: center;
   gap: 4px;
   margin-top: 4px;
-  font-size: 12px;
+  font-size: var(--font-size-label-medium);
   color: var(--content-secondary-enabled);
 }
 
@@ -305,7 +350,7 @@ const needsAttention = computed(
   background: var(--background-primary-a-enabled);
   color: var(--content-primary-a-enabled);
   font: inherit;
-  font-size: 12px;
+  font-size: var(--font-size-label-medium);
   cursor: pointer;
 }
 

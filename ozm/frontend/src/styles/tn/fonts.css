@@ -1,6 +1,13 @@
-/* Proxima Nova — shipped with the TN Life UI Kit (uikit/fonts/*.ttf). */
-@font-face{font-family:"Proxima Nova";src:url("/fonts/ProximaNova-Light.ttf");font-weight:300;font-style:normal;font-display:swap}
-@font-face{font-family:"Proxima Nova";src:url("/fonts/ProximaNova-Regular.ttf");font-weight:400;font-style:normal;font-display:swap}
-@font-face{font-family:"Proxima Nova";src:url("/fonts/ProximaNova-Semibold.ttf");font-weight:600;font-style:normal;font-display:swap}
-@font-face{font-family:"Proxima Nova";src:url("/fonts/ProximaNova-Bold.ttf");font-weight:700;font-style:normal;font-display:swap}
-@font-face{font-family:"Proxima Nova";src:url("/fonts/ProximaNova-Extrabld.ttf");font-weight:800;font-style:normal;font-display:swap}
+/* UI Kit 7.0.0 fonts.css: вариативный Inter (uikit/fonts/Inter-Variable.ttf, лицензия OFL — public/fonts/OFL.txt).
+   Путь заменён на /fonts/, чтобы шрифт отдавался из public/ с учётом VITE_BASE_PATH. */
+body {
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Вариативное начертание: ось wght покрывает весь диапазон 100–900 */
+@font-face {
+  font-family: "Inter";
+  src: url("/fonts/Inter-Variable.ttf");
+  font-weight: 100 900;
+  font-style: normal;
+}
