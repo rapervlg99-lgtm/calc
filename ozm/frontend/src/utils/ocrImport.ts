@@ -149,9 +149,21 @@ export function cleanMark(size: string | null | undefined): string {
   // Префиксы «Гн.» и «Тр.» обозначают вид профиля, но не входят в размер.
   s = s.replace(/^Гн\.?\s*/iu, '')
   s = s.replace(/^Тр\.?\s*(?=\d)/iu, '')
+  // Значок двутавра в текстовом слое записан цифрой: «1 50Ш4» вместо «I 50Ш4»
+  // (ведомость: так уходили в ручной ввод все 11 строк двутавров, хотя марки
+  // 50Ш4, 45Ш4, 40Ш2 в сортаменте есть). Требуем пробел после значка: настоящие
+  // обозначения начинаются с цифры без пробела — «160х5», «12.5», «250х6».
+  // Снимается ДО значков `□ ∟ ⌶`: за цифрой может стоять ещё и он («1 □250х6»).
+  s = s.replace(/^[1lI|]\s+(?=[\d□∟⌶])/u, '')
   s = s.replace(/^[□∟⌶ΙI|L\[\]]\s*(?=[\d])/u, '')
   s = s.replace(/^[□∟⌶]\s*/u, '')
   s = s.replace(/\s*(?:мм|mm)$/i, '')
+  // Код детали из спецификации: «40Б2 (214-202-0103-0002)», «50Б1
+  // (214-202-0103-0005)». Печатается под маркой в той же графе, к обозначению
+  // профиля не относится, но без снятия марка не находится ни в ГОСТе, ни в
+  // справочнике масс — на KD.163_8 так уходили в ручной ввод все 44 строки.
+  s = s.replace(/^\s*\(\s*\d[\d\s.\-/]*\)\s*/u, '')
+  s = s.replace(/\s*\(\s*\d[\d\s.\-/]*\)\s*$/u, '')
   s = s.replace(/\s+/g, ' ').trim()
   // значок типа профиля, попавший ПОСЛЕ обозначения из текстового слоя
   // («25Б1 т», «25Б1 1», «25х3 □», «8П С»): снимаем, если остаток — обозначение
@@ -462,6 +474,11 @@ function round2(v: number): number {
 /**
  * Погонная масса марки: справочник масс → справочник проката (по размерам
  * сечения, только среди форм своей категории) → круглый профиль по диаметру.
+ *
+ * Если в спецификации указан ГОСТ профиля (`gostProfile`), масса обязана прийти
+ * из этого стандарта. Когда поверить ГОСТу не удалось — `standardMiss`: строка
+ * уходит на ручную проверку, а не получает молча массу другого стандарта
+ * (у «40Б2» их два: 66,0 кг/м по действующему и 54,7 по ГОСТ 26020-83).
  */
 export function resolveMassPerMeter(
   mark: string,
@@ -471,7 +488,14 @@ export function resolveMassPerMeter(
   roll: RollMark[],
   index: Map<string, RollMark> | undefined,
   gostProfile = ''
-): { mpm: number | null; source: MassSource | '' } {
+): { mpm: number | null; source: MassSource | ''; standardMiss?: boolean } {
+  // Проверять ГОСТ можно только когда сортамент вообще передан в импорт: без
+  // него «не подтверждён» — не факт, а отсутствие данных.
+  const gostUnverified = !!gostProfile.trim() && roll.length > 0
+  // Флаг добавляем только когда он true: иначе меняется форма ответа, а на неё
+  // опираются тесты и вызывающий код.
+  const miss = (res: { mpm: number | null; source: MassSource | '' }) =>
+    gostUnverified ? { ...res, standardMiss: true } : res
   const sourcePool = sourceRollsForGost(roll, gostProfile)
   if (sourcePool.length) {
     const shapes = SHAPES_BY_CATEGORY[category]
@@ -481,10 +505,10 @@ export function resolveMassPerMeter(
     if (hits.length === 1 && hits[0].massPerMeter) return { mpm: hits[0].massPerMeter, source: 'cache' }
     // Missing or ambiguous marks in a known standard require manual review.
     // Do not fall back to an identically named mark from another standard.
-    return { mpm: null, source: '' }
+    return miss({ mpm: null, source: '' })
   }
   const hb = lookupHandbook(handbook, category, mark)
-  if (hb && hb > 0) return { mpm: hb, source: 'cache' }
+  if (hb && hb > 0) return miss({ mpm: hb, source: 'cache' })
   if (roll.length) {
     // сечение ищем только среди форм своей категории: «100х8» есть и у
     // труб, и у уголков
@@ -498,7 +522,9 @@ export function resolveMassPerMeter(
     }
     if (hit) {
       const mpm = hit.massPerMeter || massPerMeterFromDims(hit.shape, hit.dims)
-      if (mpm) return { mpm, source: hit.massPerMeter ? 'cache' : 'formula' }
+      // масса из карточки сортамента без опоры на ГОСТ — тоже повод проверить;
+      // расчёт по размерам уже идёт со статусом «Требует проверки»
+      if (mpm) return hit.massPerMeter ? miss({ mpm, source: 'cache' }) : { mpm, source: 'formula' }
     }
   }
   // круглый профиль по диаметру («RD18», «Ø18», «⌀18»): в справочнике
@@ -508,7 +534,7 @@ export function resolveMassPerMeter(
   // уголок, которого нет в словарях: по размерам полок и толщины из марки
   const ang = angleMassPerMeterFromMark(category, mark)
   if (ang) return { mpm: ang, source: 'formula' }
-  return { mpm: null, source: '' }
+  return miss({ mpm: null, source: '' })
 }
 
 /** Собирает задание ОГЗ из результата OCR. Массы в спецификации — в тоннах. */
@@ -525,6 +551,8 @@ export function buildJobFromOcr(res: OcrpdfResult, opts: BuildOptions = {}): Bui
   let autoMarks = 0   // марка подобрана из вариантов OCR по справочнику
   let askMarks = 0    // вариантов несколько или ни одного — выбор за пользователем
   let carriedGroups = 0 // наименование группы взято со строки выше
+  let gostFallback = 0   // ГОСТ профиля не подтверждён: масса взята из прежнего справочника
+  let gostOtherStandard = 0 // марка нашлась только в другом стандарте — масса не подставлена
 
   for (const t of res.tables || []) {
     // «В том числе по маркам или наименованиям» — разбивка итогов по маркам
@@ -582,6 +610,10 @@ export function buildJobFromOcr(res: OcrpdfResult, opts: BuildOptions = {}): Bui
       // как отдельный стандарт. Не подменяем ими стандарт марки стали.
       const foreignStandard = /(?:^|\s)((?:DIN|EN)\s+\d+(?:[.\-]\d+)*)\b/i.exec(r.profile_group || '')?.[1] || ''
       const gost = profileStandard || foreignStandard
+      // Достоверный профильный ГОСТ — из раздельного поля или DIN/EN из названия
+      // группы. В старом формате единственное `standards` хранит ГОСТ СТАЛИ
+      // («27772-2021»), и по нему нельзя требовать проверку сортамента.
+      const gostTrusted = r.profile_standards !== undefined || !!foreignStandard
       const groupName = shortGroup(r.profile_group)
 
       for (const m of masses) {
@@ -624,7 +656,11 @@ export function buildJobFromOcr(res: OcrpdfResult, opts: BuildOptions = {}): Bui
           continue
         }
         const category = profileCategory(r.profile_group, gost, String(r.profile_size || ''))
-        let { mpm, source } = resolveMassPerMeter(mark, category, r.profile_group, handbook, roll, index, gost)
+        let { mpm, source, standardMiss } = resolveMassPerMeter(mark, category, r.profile_group, handbook, roll, index, gost)
+        // ГОСТ из спецификации не подтвердился сортаментом: массу брать из
+        // прежнего справочника можно, но строку обязан проверить человек —
+        // у одного обозначения в разных стандартах бывает разная масса.
+        let gostMiss = gostTrusted && !!standardMiss
         let markUncertain = false
         // OCR не разобрал букву серии («2011»): пробуем варианты по справочнику.
         // Единственный найденный — подставляем с пометкой «Требует проверки»;
@@ -640,6 +676,7 @@ export function buildJobFromOcr(res: OcrpdfResult, opts: BuildOptions = {}): Bui
             base.profileMark = found[0].mark
             mpm = found[0].mpm
             source = found[0].source
+            gostMiss = gostMiss || (gostTrusted && !!found[0].standardMiss)
             markUncertain = true
             autoMarks++
           } else {
@@ -656,8 +693,11 @@ export function buildJobFromOcr(res: OcrpdfResult, opts: BuildOptions = {}): Bui
           base.massSource = source
           base.lengthM = round2(massKg / mpm)
           const status: RowStatus =
-            source === 'formula' || uncertain || markUncertain ? 'Требует проверки' : 'Посчитано'
+            source === 'formula' || uncertain || markUncertain || gostMiss ? 'Требует проверки' : 'Посчитано'
           base.status = status
+          if (gostMiss) gostFallback++
+        } else if (gostMiss) {
+          gostOtherStandard++
         }
         profileRows.push(base)
       }
@@ -674,6 +714,14 @@ export function buildJobFromOcr(res: OcrpdfResult, opts: BuildOptions = {}): Bui
   const manual = profileRows.filter((r) => r.status === 'Нужен ввод массы').length
   if (manual) {
     notes.push(`Для ${manual} строк(и) профиль не найден в справочнике — введите массу 1 м вручную.`)
+  }
+  if (gostFallback) {
+    notes.push(`У ${gostFallback} строк(и) ГОСТ профиля из спецификации не подтверждён сортаментом — `
+      + 'масса 1 м взята из прежнего справочника (в другом стандарте у той же марки масса другая), проверьте.')
+  }
+  if (gostOtherStandard) {
+    notes.push(`У ${gostOtherStandard} строк(и) в указанном ГОСТ профиля марка не найдена — `
+      + 'масса 1 м не подставлена, проверьте ГОСТ и обозначение марки в спецификации.')
   }
   if (autoMarks) {
     notes.push(`Марка ${autoMarks} строк(и) подобрана по справочнику из вариантов OCR (буква серии не читалась) — проверьте.`)
