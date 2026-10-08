@@ -112,6 +112,16 @@ const SHEET_SIZE_RE = /^(?:[δбd]\s*=\s*|t\s*|[-–—]\s*)?(\d+(?:[.,]\d+)?)\s
 export function sheetThicknessMm(size: string | null | undefined): number | null {
   const s = String(size || '').trim()
   if (!s) return null
+  // Профнастил (ГОСТ 24045): марка начинается с Н/НС/С и цифр, а толщина стоит
+  // последним числом — «Н57х750х0,8», «Н57-750-0.8», «С21-1000-0,7». Раньше
+  // такие обозначения не разбирались, и строка уходила в ручной ввод, хотя по
+  // решению Олега для профнастила нужна только толщина (0,8 мм → 6,28 кг/м²).
+  const prof = /^[НHнNСC][СC]?\s?\d{1,3}(?:[хx×\-–]\s?\d{1,4})*[хx×\-–]\s?(\d{1,2}(?:[.,]\d)?)$/u.exec(s)
+  if (prof) {
+    const v = Number(prof[1].replace(',', '.'))
+    // профнастил тоньше 2,5 мм: марка стали «С255-5» сюда не попадает
+    if (Number.isFinite(v) && v > 0 && v <= 2.5) return v
+  }
   const m = SHEET_SIZE_RE.exec(s)
   if (!m) return null
   const v = Number(m[1].replace(',', '.'))
@@ -122,7 +132,10 @@ export function isSheetRow(row: Pick<OcrpdfRow, 'profile_group' | 'profile_size'
   if (SHEET_GROUP_RE.test(row.profile_group || '')) return true
   const size = String(row.profile_size || '').trim()
   // «δ=4», «t40» — толщина листа: у профилей обозначение начинается с числа или серии
-  return /^[δбd]\s*=/i.test(size) || /^t\s?\d/i.test(size)
+  if (/^[δбd]\s*=/i.test(size) || /^t\s?\d/i.test(size)) return true
+  // Профнастил по ГОСТ 24045: «Н57х750х0,8», «С21-1000-0,7» — для него нужна
+  // только толщина, поэтому такая строка листовая (решение Олега 07.10).
+  return /^[НHнNСC][СC]?\s?\d{1,3}(?:[хx×\-–]\s?\d{1,4})*[хx×\-–]\s?\d{1,2}(?:[.,]\d)?$/u.test(size)
 }
 
 /**
@@ -502,7 +515,24 @@ export function resolveMassPerMeter(
     const pool = shapes ? sourcePool.filter((r) => shapes.includes(r.shape)) : sourcePool
     const candidates = new Set(rollMarkCandidates(category, mark).flatMap(markAliases))
     const hits = pool.filter((r) => markAliases(r.label).some((a) => candidates.has(a)))
-    if (hits.length === 1 && hits[0].massPerMeter) return { mpm: hits[0].massPerMeter, source: 'cache' }
+    if (hits.length === 1 && hits[0].massPerMeter) {
+      // Редакция стандарта в листе и в справочнике может отличаться: лист
+      // ссылается на «ГОСТ 30245-2012», в сортаменте — 30245-2003. Профиль в
+      // редакциях тот же, поэтому массу берём из своей редакции того же номера,
+      // но строку помечаем — редакция не совпала (правило согласовано 07.10).
+      const used = String(hits[0].standard || '')
+        .toUpperCase()
+        .replace(/[–—]/g, '-')
+        .replace(/\s+/g, '')
+      const code = gostProfile
+        .toUpperCase()
+        .replace(/[–—]/g, '-')
+        .replace(/\s+/g, '')
+        .match(/\d[\d.]*-\d{2,4}/)?.[0] || ''
+      const sameEdition = !!code && used.includes(code)
+      const res = { mpm: hits[0].massPerMeter, source: 'cache' as MassSource }
+      return sameEdition ? res : miss(res)
+    }
     // Missing or ambiguous marks in a known standard require manual review.
     // Do not fall back to an identically named mark from another standard.
     return miss({ mpm: null, source: '' })
