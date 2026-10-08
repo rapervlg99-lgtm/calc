@@ -83,13 +83,23 @@ def check_row_sums(rows: list[LogicalRow], cols: list[Column],
                    tol: Tolerance) -> list[RowCheck]:
     """Сумма масс по элементам против «Общей массы» — по каждой строке."""
     keys = _element_keys(cols)
+    eff = _effective_cells(rows, keys + ["total_mass"], keys)
     out: list[RowCheck] = []
     for row in rows:
         if row.kind in ("empty", "section_header"):
             continue
         total_cell = row.cells.get("total_mass")
         total = _num(total_cell)
-        terms = [v for v in (_num(row.cells.get(k)) for k in keys) if v is not None]
+        # У строки-итога пустая графа значит «значение есть в данных группы»:
+        # берём его, иначе напечатанный итог не сойдётся с собственной строкой
+        # (file-3: 1,563 против 1,375 — терялись 0,188 «Рамы вентилятора»).
+        terms = []
+        for key in keys:
+            v = _num(row.cells.get(key))
+            if v is None and row.kind != "data":
+                v = eff.get((row.row, key))
+            if v is not None:
+                terms.append(v)
         if total is None and not terms:
             continue
         if total is None:
@@ -117,6 +127,68 @@ def _column_sum(rows: list[LogicalRow], key: str) -> tuple[float, int]:
     return round(sum(vals), 6), len(vals)
 
 
+def _effective_cells(rows: list[LogicalRow], keys: list[str],
+                     elem_keys: list[str]) -> dict[tuple[int, str], float]:
+    """Числа, которых нет в ячейках, но которые входят в напечатанные итоги.
+
+    Два случая, оба встретились на листах корпуса:
+
+    1. В строке-итоге пуста графа, значение которой есть в данных группы, а
+       напечатанный итог его учитывает (KD.163_8 — 3,46 т в «Опоры», file-3 —
+       0,188 т в «Раме для вентилятора»). Для строки-итога берём сумму данных.
+    2. В строке данных пуста «Общая масса», хотя массы по элементам прочитаны
+       (file-14, поз. 9: 0,43 т). Для колонки общей массы берём сумму элементов.
+
+    Саму пустую графу проверка по-прежнему помечает замечанием: сравнивать её с
+    напечатанным нельзя. Но дальше по цепочке («Итого» → «Всего профиля» →
+    «Общая масса») суммы сходятся, и производных расхождений не возникает.
+    """
+    out: dict[tuple[int, str], float] = {}
+    bucket: list[LogicalRow] = []
+    for row in rows:
+        if row.kind == "data":
+            bucket.append(row)
+            if _num(row.cells.get("total_mass")) is None:
+                vals = [v for v in (_num(row.cells.get(k)) for k in elem_keys)
+                        if v is not None]
+                if vals:
+                    out[(row.row, "total_mass")] = round(sum(vals), 6)
+            continue
+        if row.kind in ("group_total", "profile_total", "grand_total"):
+            for key in keys:
+                if key == "total_mass" or _num(row.cells.get(key)) is not None:
+                    continue
+                calc, n = _column_sum(bucket, key)
+                if not (n and calc):
+                    continue
+                # Подставляем, только если напечатанный итог строки это
+                # подтверждает: у file-3 «Итого» 1,563 = 1,375 + 0,188, а у
+                # KD.163_8 напечатанные 79,62 наоборот НЕ включают 3,46 — там
+                # подстановка ломала сходившуюся проверку (178+5 → 177+6).
+                total = _num(row.cells.get("total_mass"))
+                if total is not None:
+                    own = [v for k2, v in ((k2, _num(row.cells.get(k2))) for k2 in keys
+                                           if k2 not in (key, "total_mass")) if v is not None]
+                    if abs(round(sum(own), 6) + calc - total) > 0.05:
+                        continue
+                out[(row.row, key)] = calc
+        bucket = []
+    return out
+
+
+def _sum_with(rows: list[LogicalRow], key: str,
+              eff: dict[tuple[int, str], float]) -> tuple[float, int]:
+    """Сумма колонки с подстановкой эффективных значений."""
+    vals = []
+    for r in rows:
+        v = _num(r.cells.get(key))
+        if v is None:
+            v = eff.get((r.row, key))
+        if v is not None:
+            vals.append(v)
+    return round(sum(vals), 6), len(vals)
+
+
 def _continued_group(bucket: list[LogicalRow], rows: list[LogicalRow]) -> bool:
     """Первая группа блока, чьё наименование — обрывок с маленькой буквы."""
     if not bucket:
@@ -138,6 +210,7 @@ def check_group_totals(rows: list[LogicalRow], cols: list[Column],
                        tol: Tolerance) -> list[RowCheck]:
     """«Итого» против суммы строк данных своей группы (по каждой колонке)."""
     keys = _element_keys(cols) + ["total_mass"]
+    eff = _effective_cells(rows, keys, _element_keys(cols))
     out: list[RowCheck] = []
     bucket: list[LogicalRow] = []
     totals_bucket: list[LogicalRow] = []
@@ -160,13 +233,20 @@ def check_group_totals(rows: list[LogicalRow], cols: list[Column],
                 continue
             for key in keys:
                 expected = _num(row.cells.get(key))
-                calc, n = _column_sum(bucket, key)
+                calc, n = _sum_with(bucket, key, eff)
                 if expected is None and n == 0:
                     continue
                 if expected is None:
+                    # Итог в этой колонке не заполнен, а данные есть. Это не
+                    # ошибка распознавания (проверить не с чем), но и не «всё
+                    # хорошо»: на KD.163_8 так теряется 3,46 т в колонке
+                    # «Опоры». Отдельный статус `note` — замечание для
+                    # человека, оно идёт в отчёт отдельным списком и не портит
+                    # счётчик расхождений.
                     out.append(RowCheck(row.row, "group_total", None, calc,
-                                        None, 0.0, "failed", key,
-                                        "total row is empty while data rows have values"))
+                                        None, 0.0, "note", key,
+                                        "итог в этой колонке не заполнен, "
+                                        "а в данных есть значения — сверить с чертежом"))
                     continue
                 t = tol.for_terms(max(n, 1))
                 delta = round(calc - expected, 6)
@@ -181,8 +261,8 @@ def check_group_totals(rows: list[LogicalRow], cols: list[Column],
             # вовсе, и «Всего профиля» стоит сразу под строками данных).
             for key in keys:
                 expected = _num(row.cells.get(key))
-                calc_t, n_t = _column_sum(totals_bucket, key)
-                calc_d, n_d = _column_sum(bucket, key)
+                calc_t, n_t = _sum_with(totals_bucket, key, eff)
+                calc_d, n_d = _sum_with(bucket, key, eff)
                 calc, n = round(calc_t + calc_d, 6), n_t + n_d
                 if expected is None and n == 0:
                     continue
@@ -243,11 +323,38 @@ def check_grand_total(parts: list[tuple[list[LogicalRow], list[Column]]],
     return out
 
 
+def _is_service_row(row: LogicalRow) -> bool:
+    """Служебная строка таблицы марок, а не марка стали.
+
+    Последней строкой в «В том числе по маркам или наименованиям» идёт «масса
+    наплавленного металла 1%». Это не марка: её масса в сумму по маркам не
+    входит, и без исключения проверка объявляла расхождение на верных числах —
+    на Estakada 397,08 (с наплавленным металлом 3,93) против напечатанных 393,15.
+
+    Сравнение терпимо к ошибкам OCR: живой прогон читает подпись и как
+    «масса. наплавленного металла. 1%», и как «масса. наплабленного металла»
+    (в→б). Поэтому смотрим на начало слова «масс…», на знак процента и на
+    основу «напла», а не на точную подпись.
+    """
+    for cell in row.cells.values():
+        if cell is None or cell.is_empty:
+            continue
+        text = "".join(str(cell.text or "").lower().split())
+        if not text:
+            continue
+        if "%" in text or text.startswith("масс") or "напла" in text:
+            return True
+    return False
+
+
 def check_by_grade(grade_rows: list[LogicalRow], cols: list[Column],
                    grand_total: float | None, tol: Tolerance) -> list[RowCheck]:
     """Таблица «В том числе по маркам»: сумма по маркам == общий итог."""
     if grand_total is None:
         return []
+    kept = [r for r in grade_rows if not _is_service_row(r)]
+    skipped = len(grade_rows) - len(kept)
+    grade_rows = kept
     vals = [v for v in (_num(r.cells.get("total_mass")) for r in grade_rows)
             if v is not None]
     if not vals:
@@ -255,18 +362,24 @@ def check_by_grade(grade_rows: list[LogicalRow], cols: list[Column],
     calc = round(sum(vals), 6)
     t = tol.for_terms(len(vals))
     delta = round(calc - grand_total, 6)
+    ok = abs(delta) <= t
+    reason = ""
+    if not ok:
+        reason = "sum over grades != total metal mass"
+    elif skipped:
+        reason = ("строка «масса наплавленного металла» в сумму по маркам "
+                  "не входит (%d стр.)" % skipped)
     return [RowCheck(-1, "by_grade_total", grand_total, calc, delta, t,
-                     "ok" if abs(delta) <= t else "failed", "total_mass",
-                     "" if abs(delta) <= t else "sum over grades != total metal mass",
-                     vals)]
+                     "ok" if ok else "failed", "total_mass", reason, vals)]
 
 
 _STATUS_TO_REPORT = {"ok": "passed", "failed": "failed", "skipped": "skipped"}
 
 
 def summarize(checks: list[RowCheck]) -> dict[str, int]:
-    """Сводка по статусам. RowCheck.status = ok|failed|skipped, в отчёте — passed."""
-    out = {"passed": 0, "failed": 0, "skipped": 0}
+    """Сводка по статусам. RowCheck.status = ok|failed|skipped|note, в отчёте —
+    passed/failed/skipped/note (note — замечание для человека, не расхождение)."""
+    out = {"passed": 0, "failed": 0, "skipped": 0, "note": 0}
     for c in checks:
         key = _STATUS_TO_REPORT.get(c.status, c.status)
         out[key] = out.get(key, 0) + 1
@@ -274,12 +387,19 @@ def summarize(checks: list[RowCheck]) -> dict[str, int]:
 
 
 def mark_failed_cells(table: Table) -> None:
-    """Ячейки строк с непройденной проверкой помечаются на ручной проверку."""
+    """Ячейки строк с расхождением и со замечанием помечаются на ручную проверку."""
     bad = {c.row for c in table.checks if c.status == "failed"}
-    if not bad:
+    note = {c.row for c in table.checks if c.status == "note"} - bad
+    if not bad and not note:
         return
     for cell in table.cells:
-        if cell.row in bad and not cell.is_empty:
+        if cell.is_empty:
+            continue
+        if cell.row in bad:
             cell.requires_review = True
             if "arithmetic check failed in this row" not in cell.notes:
                 cell.notes.append("arithmetic check failed in this row")
+        elif cell.row in note:
+            cell.requires_review = True
+            if "итог в чертеже не заполнен — проверить вручную" not in cell.notes:
+                cell.notes.append("итог в чертеже не заполнен — проверить вручную")

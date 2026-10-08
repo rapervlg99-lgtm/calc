@@ -695,6 +695,21 @@ def _collect_primitives(page: fitz.Page, eps: float = 0.05, glyph_max: float = 1
                       np.maximum(lx1, lx2) + lpad, np.maximum(ly1, ly2) + lpad], axis=1).tolist()
     l_k1, l_k2 = keys_of(lx1, ly1), keys_of(lx2, ly2)
 
+    # Полосы линовки — нужны, чтобы отбросить микро-примитивы на её пересечениях
+    # (см. `_on_ruling_crossing`). Линовкой считаем ровно то, что исключили выше.
+    ruling_h: list[tuple[float, float, float, float]] = []   # y, x0, x1, полоса
+    ruling_v: list[tuple[float, float, float, float]] = []   # x, y0, y1, полоса
+    for i in range(len(L)):
+        if l_ok[i]:
+            continue
+        band = float(lpad[i]) + 0.35
+        if ldy[i] <= 0.2:
+            ruling_h.append((float((ly1[i] + ly2[i]) / 2.0),
+                             float(min(lx1[i], lx2[i])), float(max(lx1[i], lx2[i])), band))
+        else:
+            ruling_v.append((float((lx1[i] + lx2[i]) / 2.0),
+                             float(min(ly1[i], ly2[i])), float(max(ly1[i], ly2[i])), band))
+
     # кривые: габарит считаем по САМОЙ кривой, а не по опорным точкам:
     # выпуклая оболочка опорных точек заметно шире кривой, из-за чего в вырез
     # попадали чернила соседнего символа и разрыв замыкался — 'с' читалось
@@ -726,17 +741,54 @@ def _collect_primitives(page: fitz.Page, eps: float = 0.05, glyph_max: float = 1
         if kind == 0:
             if not l_ok[i]:
                 continue
+            if _on_ruling_crossing(l_box[i], ruling_h, ruling_v):
+                continue
             pts.append(tuple(l_box[i]))
             keys.append((tuple(l_k1[i]), tuple(l_k2[i])))
         elif kind == 1:
+            if _on_ruling_crossing(c_box[i], ruling_h, ruling_v):
+                continue
             pts.append(tuple(c_box[i]))
             keys.append((tuple(c_k1[i]), tuple(c_k2[i])))
         else:
             if not r_ok[i]:
                 continue
+            if _on_ruling_crossing(r_box[i], ruling_h, ruling_v):
+                continue
             pts.append(tuple(r_box[i]))
             keys.append(())                    # самостоятельный примитив
     return pts, keys
+
+
+def _on_ruling_crossing(box: tuple[float, float, float, float],
+                        ruling_h: list[tuple[float, float, float, float]],
+                        ruling_v: list[tuple[float, float, float, float]],
+                        tiny: float = 2.5, slack: float = 1.0) -> bool:
+    """Микро-примитив, сидящий на пересечении линовки, — не текст.
+
+    Углы сетки в некоторых экспортах нарисованы отдельными примитивами размером
+    с толщину линии (1.13 pt) или в половину её (0.57 pt). Шаблонный
+    распознаватель читал такой шип как знак — '4', '9', 'у' — и подмешивал его в
+    соседнюю ячейку: вместо '0,041' получалось '4|0,041|4', ячейка переставала
+    быть числовой, и арифметические проверки строк падали (2300203_R_KM2, 27
+    ложных падений). Настоящий знак на пересечении линовки стоять не может:
+    линовка идёт по краю ячейки, а текст — внутри неё. Поэтому примитив, который
+    целиком укладывается в полосу горизонтали И в полосу вертикали, отбрасываем.
+
+    Полоса = половина пера плюс небольшой запас: габарит шипа как раз равен перу.
+    Ограничение `tiny` оставляет в покое настоящие мелкие знаки (точку, запятую,
+    дефис), которые на пересечениях не лежат.
+    """
+    x0, y0, x1, y1 = box
+    if max(x1 - x0, y1 - y0) > tiny:
+        return False
+    cx, cy = (x0 + x1) / 2.0, (y0 + y1) / 2.0
+    on_h = any(abs(cy - y) <= band and x0 >= a - slack and x1 <= b + slack
+               for y, a, b, band in ruling_h)
+    if not on_h:
+        return False
+    return any(abs(cx - x) <= band and y0 >= a - slack and y1 <= b + slack
+               for x, a, b, band in ruling_v)
 
 
 # На листах А0/А1 350 DPI даёт десятки мегапикселей: рендер и OCR занимают

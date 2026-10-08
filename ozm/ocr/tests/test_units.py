@@ -11,17 +11,17 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from ocrpdf.cell_reader import (TextLine, _overlap_frac, _resolve_engine, _worth_rotation,
                                 should_try_rotation)
-from ocrpdf.glyph_ocr import (_hollow_rect_score, _match_score, baseline_px, group_lines,
-                              merge_counters, merge_diacritics)
+from ocrpdf.glyph_ocr import (_hollow_rect_score, _match_score, _on_ruling_crossing,
+                              baseline_px, group_lines, merge_counters, merge_diacritics)
 from ocrpdf.models import Cell, RowCheck, Table
 from ocrpdf.normalizer import (_fix_digit_context, canonical_size, extract_standards,
                                normalize_cell, parse_number, row_marker, strip_standards)
-from ocrpdf.structure import (Column, LogicalRow, _dehyphenate, canonical_header,
-                              canonical_profile_group, classify_table,
+from ocrpdf.structure import (Column, LogicalRow, _dehyphenate, _remark_reprinted_totals,
+                              canonical_header, canonical_profile_group, classify_table,
                               detect_header_rows, refine_structure, skeleton)
 from ocrpdf.pdfbackend import fitz
-from ocrpdf.validator import (Tolerance, check_grand_total, check_group_totals,
-                              check_row_sums, summarize)
+from ocrpdf.validator import (Tolerance, check_by_grade, check_grand_total,
+                              check_group_totals, check_row_sums, summarize)
 from ocrpdf.pipeline import Options, parse_pages, run
 from ocrpdf.vector_grid import (Ruling, TableBlock, _build_grid, _merge_collinear,
                                 _regularize_pitch, extract_rulings, find_table_blocks,
@@ -295,6 +295,25 @@ def test_classify_table():
     assert classify_table(other) == "generic"
 
 
+def test_spec_without_position_column_is_still_spec_main():
+    """«Техническая спецификация» без № п.п. (26_020) — всё равно спецификация.
+
+    Раньше требовалась роль position: на листах без нумерации позиций таблица
+    числилась `generic`, арифметика не запускалась, а строки шапки уезжали в
+    данные. Достаточно масс по элементам, общей массы и любой опознавательной
+    графы.
+    """
+    cols = [Column(0, "profile_group", "Наименование профиля, ГОСТ, ТУ"),
+            Column(1, "steel_grade", "Наименование или марка металла, ГОСТ, ТУ"),
+            Column(2, "profile_size", "Номер и размеры профиля, мм"),
+            Column(3, "element_mass", "Масса металла по элементам", element="Стойки"),
+            Column(4, "element_mass", "Балки, прогоны", element="Балки, прогоны"),
+            Column(7, "total_mass", "Общая масса, т")]
+    assert classify_table(cols) == "spec_main"
+    # без масс по элементам это по-прежнему не спецификация
+    assert classify_table([c for c in cols if c.role != "element_mass"]) == "generic"
+
+
 def test_total_mass_inferred_after_element_group():
     """OCR «масса, Ш» справа от «массы по элементам» — это общая масса.
 
@@ -534,6 +553,18 @@ def test_drawing_grid_skips_dimension_mesh_keeps_spec():
     assert is_drawing_grid(_grid_block(25, 9)) is False
     assert is_drawing_grid(_grid_block(40, 9)) is False
     assert is_drawing_grid(_grid_block(83, 17)) is False
+    # Настоящая спека, где толстые линии нарисованы ДВУМЯ параллельными штрихами
+    # с шагом ~2 pt (2026.05.15, 28×17): «рваный шаг» есть, но узких промежутков
+    # меньше половины — это таблица, а не линовка чертежа.
+    assert is_drawing_grid(_grid_block(
+        28, 17, col_gaps=[141.0, 60.4, 14.1, 2.0, 68.5, 2.0, 26.2, 2.0, 40.3, 2.0,
+                          40.3, 2.0, 40.3, 2.0, 40.3, 1.9, 41.3]
+    )) is False
+    # А это чертёжная сетка: засечки по 2–3 pt — узких промежутков больше половины
+    assert is_drawing_grid(_grid_block(
+        28, 16, col_gaps=[2.0, 3.0, 2.0, 150.0, 3.0, 2.0, 120.0, 2.0,
+                          3.0, 2.0, 90.0, 3.0, 2.0, 140.0, 2.0, 3.0]
+    )) is True
 
 
 def test_stamp_block_is_the_narrow_title_column():
@@ -721,7 +752,164 @@ def test_grand_total_without_terms_is_skipped_not_failed():
 def test_summarize_maps_ok_to_passed():
     checks = [RowCheck(1, "row_sum", 1.0, 1.0, 0.0, 0.02, "ok"),
               RowCheck(2, "row_sum", 1.0, 2.0, 1.0, 0.02, "failed")]
-    assert summarize(checks) == {"passed": 1, "failed": 1, "skipped": 0}
+    assert summarize(checks) == {"passed": 1, "failed": 1, "skipped": 0, "note": 0}
+
+
+def test_summarize_counts_note_separately_from_failed():
+    """Замечание (`note`) — не расхождение: счётчик failed его не видит."""
+    checks = [RowCheck(5, "group_total", None, 3.46, None, 0.0, "note", "element:11",
+                       "итог в этой колонке не заполнен")]
+    assert summarize(checks) == {"passed": 0, "failed": 0, "skipped": 0, "note": 1}
+
+
+def test_empty_total_in_column_is_note_not_failure():
+    """Пустой итог в колонке — замечание для человека, а не падение арифметики.
+
+    Так на KD.163_8: в колонке «Опоры» у строк данных стоит 3,46 т, а в строке
+    «Итого» этой колонки пусто. Сравнивать не с чем, ошибки распознавания нет.
+    """
+    cols = _cols()
+    empty = normalize_cell(Cell(row=2, col=4, text=""), "element_mass")
+    rows = [LogicalRow(1, "data", 1, {"element:4": _cell(3.46), "total_mass": _cell(3.46)}),
+            LogicalRow(2, "group_total", 2, {"element:4": empty, "total_mass": _cell(3.46)})]
+    checks = [c for c in check_group_totals(rows, cols, Tolerance()) if c.column == "element:4"]
+    assert [c.status for c in checks] == ["note"], checks
+    assert "не заполнен" in checks[0].reason
+    assert checks[0].calculated == 3.46
+    assert summarize(checks)["failed"] == 0
+
+
+def test_empty_total_cell_is_taken_from_group_data():
+    """Пустая графа в строке-итоге берётся из данных группы (file-3, KD.163_8).
+
+    Напечатанный итог 0,968 включает 0,188, которых в самой строке «Итого» нет
+    (графа пуста). Раньше это давало расхождение и строки, и «Всего профиля»;
+    теперь расхождения нет, а пустая графа по-прежнему помечена замечанием.
+    """
+    cols = _cols()
+    empty = normalize_cell(Cell(row=12, col=5, text=""), "element_mass")
+    rows = [LogicalRow(11, "data", 11, {"element:4": _cell(0.78), "element:5": _cell(0.188),
+                                        "total_mass": _cell(0.968)}),
+            LogicalRow(12, "group_total", 12, {"element:4": _cell(0.78), "element:5": empty,
+                                               "total_mass": _cell(0.968)})]
+    sums = [c for c in check_row_sums(rows, cols, Tolerance()) if c.row == 12]
+    assert [c.status for c in sums] == ["ok"], sums
+    groups = {c.column: c for c in check_group_totals(rows, cols, Tolerance()) if c.row == 12}
+    assert groups["element:5"].status == "note"
+    assert groups["element:5"].calculated == 0.188
+    assert groups["total_mass"].status == "ok", groups["total_mass"]
+
+
+def test_effective_total_only_when_printed_total_confirms():
+    """Подстановка только при подтверждении напечатанным итогом строки.
+
+    KD.163_8: в «Итого» пуста графа «Опоры», в данных 3,46 т, но напечатанные
+    79,62 т её НЕ включают — подстановка ломала сходившуюся проверку. Поэтому
+    подставляем, лишь когда напечатанный итог строки равен сумме остальных граф
+    вместе с найденным значением (file-3: 1,563 = 1,375 + 0,188).
+    """
+    from ocrpdf.validator import _effective_cells, _element_keys
+    cols = _cols()
+    keys = _element_keys(cols) + ["total_mass"]
+    empty = normalize_cell(Cell(row=12, col=5, text=""), "element_mass")
+    data = LogicalRow(11, "data", 11, {"element:4": _cell(0.78), "element:5": _cell(0.188),
+                                       "total_mass": _cell(0.968)})
+    confirmed = LogicalRow(12, "group_total", 12, {"element:4": _cell(0.78),
+                                                   "element:5": empty,
+                                                   "total_mass": _cell(0.968)})
+    excluded = LogicalRow(12, "group_total", 12, {"element:4": _cell(0.78),
+                                                  "element:5": empty,
+                                                  "total_mass": _cell(0.78)})
+    assert _effective_cells([data, confirmed], keys, _element_keys(cols))[(12, "element:5")] == 0.188
+    assert (12, "element:5") not in _effective_cells([data, excluded], keys, _element_keys(cols))
+
+
+def test_reprinted_total_with_unreadable_label_becomes_profile_total():
+    """«Всего профиля:», прочитанное как «Всe z0 nрорunа:», — итог, а не данные.
+
+    Строка повторяет значения предыдущего итога и не имеет ни профиля, ни марки.
+    Пока она считалась данными, её числа попадали в сумму следующей группы, и
+    «Итого» следующей группы объявлялось расхождением (KM_NAVES: 0,03 против
+    1,35 = 1,32 + 0,03).
+    """
+    junk = Cell(row=6, col=0, text="Всe z0 nрорunа:", source="ocr")
+    rows = [
+        LogicalRow(3, "data", 1, {"profile_size": _cell("25Б1"), "element:4": _cell(28.45),
+                                  "total_mass": _cell(28.45)}),
+        # номер позиции у строки-итога и у перепечатанного итога РАЗНЫЙ (3 и 4) —
+        # именно на этом ломался признак, пока в сравнение попадали все числа
+        LogicalRow(5, "group_total", 3, {"steel_grade": _cell("Итого:"),
+                                         "position": _cell(3),
+                                         "element:4": _cell(1.32), "element:5": _cell(27.56),
+                                         "total_mass": _cell(57.33)}),
+        LogicalRow(6, "data", 4, {"profile_group": junk, "position": _cell(4),
+                                  # протянутое наименование группы в колонке марки
+                                  # не должно мешать признаку (2300203_R_KM2)
+                                  "steel_grade": _cell("Профили стальные гнутые"),
+                                  "element:4": _cell(1.32),
+                                  "element:5": _cell(27.56), "total_mass": _cell(57.33)}),
+    ]
+    assert _remark_reprinted_totals(rows) == 1
+    assert rows[2].kind == "profile_total"
+    assert rows[2].cells["profile_group"].text == "Всего профиля"
+    assert rows[2].cells["profile_group"].requires_review
+
+
+def test_data_row_with_profile_is_not_remark_as_total():
+    """Строка с обозначением профиля остаётся данными, даже если числа совпали."""
+    marker = Cell(row=6, col=0, text="какая-то подпись", source="ocr")
+    rows = [
+        LogicalRow(5, "group_total", 3, {"element:4": _cell(1.32), "total_mass": _cell(1.32)}),
+        LogicalRow(6, "data", 4, {"profile_group": marker, "profile_size": _cell("25Б1"),
+                                  "element:4": _cell(1.32), "total_mass": _cell(1.32)}),
+    ]
+    assert _remark_reprinted_totals(rows) == 0
+    assert rows[1].kind == "data"
+
+
+def test_by_grade_skips_welded_metal_row():
+    """«Масса наплавленного металла 1%» — не марка стали и в сумму по маркам не входит.
+
+    На Estakada её 3,93 т давали 397,08 против напечатанных 393,15 — расхождение
+    на верных числах.
+    """
+    cols = _cols()
+    rows = [
+        LogicalRow(50, "data", 50, {"profile_group": _cell("С255"), "total_mass": _cell(4.02)}),
+        LogicalRow(51, "data", 51, {"profile_group": _cell("С345"), "total_mass": _cell(100.02)}),
+        LogicalRow(52, "data", 52, {"profile_group": _cell("С355"), "total_mass": _cell(168.01)}),
+        LogicalRow(53, "data", 53, {"profile_group": _cell("С355Б"), "total_mass": _cell(120.84)}),
+        LogicalRow(54, "data", 54, {"profile_group": _cell("С390"), "total_mass": _cell(0.26)}),
+        LogicalRow(55, "data", 55, {"profile_group": _cell("масса. наплавленного металла 1%"),
+                                    "total_mass": _cell(3.93)}),
+        # живой OCR читает «наплабленного» (в→б) — признак не должен зависеть от буквы
+        LogicalRow(56, "data", 56, {"profile_group": _cell("масса. наплабленного металла"),
+                                    "total_mass": _cell(0.0)}),
+    ]
+    checks = check_by_grade(rows, cols, 393.15, Tolerance())
+    assert [c.status for c in checks] == ["ok"], checks
+    assert checks[0].calculated == 393.15
+    assert "наплавленного" in checks[0].reason
+
+
+def test_ruling_crossing_primitive_is_not_a_glyph():
+    """Микро-примитив на пересечении линовки — не знак.
+
+    Так на 2300203_R_KM2 шип 0,57 pt на стыке вертикали x=425,09 и горизонталей
+    y=353,89/380,18 читался как '4'/'9' и подмешивался в ячейку массы: вместо
+    '0.041' выходило '4|0.041|4', масса перестала быть числом.
+    """
+    ruling_h = [(353.89, 62.2, 708.61, 0.565), (380.18, 62.2, 708.61, 0.565)]
+    ruling_v = [(425.09, 344.0, 400.0, 0.565)]
+    nub = (424.81, 353.61, 425.38, 354.18)
+    assert _on_ruling_crossing(nub, ruling_h, ruling_v)
+    # тот же шип, но у второй горизонтали
+    assert _on_ruling_crossing((424.81, 379.90, 425.38, 380.47), ruling_h, ruling_v)
+    # настоящий знак в ячейке: и не на пересечении, и крупнее порога
+    assert not _on_ruling_crossing((430.0, 360.0, 431.0, 361.0), ruling_h, ruling_v)
+    assert not _on_ruling_crossing((424.0, 353.0, 431.0, 360.0), ruling_h, ruling_v)
+    # вертикаль далеко — примитив не на пересечении
+    assert not _on_ruling_crossing(nub, ruling_h, [(467.62, 344.0, 400.0, 0.565)])
 
 
 # --------------------------------------------------------------------------- #

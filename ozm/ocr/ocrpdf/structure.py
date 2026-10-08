@@ -492,6 +492,22 @@ def _covering_header_cell(grid: dict[tuple[int, int], Cell], r: int, c: int,
     return None
 
 
+def _under_header_span(grid: dict[tuple[int, int], Cell], c: int,
+                       header_rows: list[int]) -> bool:
+    """Клетка стоит ПОД объединённой по горизонтали ячейкой последней строки шапки.
+
+    Так выглядит двухуровневая шапка без вертикальных объединений: сверху
+    «Масса металла по элементам конструкций, т» на пять колонок, под ней —
+    «Колонны», «Балки», «Связи»… (2026.05.15). В полной сетке объединённая
+    ячейка лежит копией в каждой накрытой клетке, поэтому у копии col_span > 1,
+    а col — якорный.
+    """
+    if not header_rows:
+        return False
+    cell = grid.get((header_rows[-1], c))
+    return cell is not None and cell.col_span > 1 and cell.col != c
+
+
 def _extend_header_fallback(grid: dict[tuple[int, int], Cell], n_rows: int,
                             n_cols: int) -> list[int]:
     """Шапка без служебной строки номеров: строка 0 и подшапки под ней.
@@ -508,12 +524,25 @@ def _extend_header_fallback(grid: dict[tuple[int, int], Cell], n_rows: int,
     собственный нечисловой текст (подписи подколонок) и (3) нет ни одной
     числовой клетки — строка данных или «Всего профиля» с номером позиции
     шапкой не станет. Не больше четырёх строк и всегда остаётся строка данных.
+
+    Дополнительно (2026.05.15) шапка бывает такой: строка 0 — объединённый
+    заголовок «Техническая спецификация металлопроката», ниже строка подписей
+    граф, ниже — названия элементов под объединённой «Масса металла по
+    элементам». Вертикальных объединений тут нет, и признак (1) не срабатывал:
+    подписи граф уезжали в данные, роли оставались неизвестными, таблица
+    числилась `generic` — арифметику не проверяли вовсе. Поэтому строка
+    принимается ещё и когда её клетки стоят под горизонтальным объединением
+    предыдущей строки шапки, а сами они — короткие подписи (до трёх слов); или
+    когда в ней узнаются канонические подписи граф (не меньше двух).
     """
     header = [0]
     r = 1
     while r < min(n_rows - 1, 4):
         covered = 0
         own_text = 0
+        under_span = 0
+        recognized = 0
+        short = 0
         for c in range(n_cols):
             cell = grid.get((r, c))
             if cell is not None and cell.row == r:
@@ -523,9 +552,17 @@ def _extend_header_fallback(grid: dict[tuple[int, int], Cell], n_rows: int,
                 if _looks_numeric(t):
                     return header
                 own_text += 1
+                if canonical_header(t)[0]:
+                    recognized += 1
+                if len(t.split()) <= 3:
+                    short += 1
             elif _covering_header_cell(grid, r, c, header) is not None:
                 covered += 1
-        if covered == 0 or own_text == 0:
+            if _under_header_span(grid, c, header):
+                under_span += 1
+        if own_text == 0:
+            return header
+        if not (covered > 0 or recognized >= 2 or (under_span >= 2 and short >= 2)):
             return header
         header.append(r)
         r += 1
@@ -708,13 +745,22 @@ def assign_roles(grid: dict[tuple[int, int], Cell], header_rows: list[int],
 def classify_table(cols: list[Column]) -> str:
     """Вид таблицы по набору распознанных ролей колонок.
 
-    `spec_main` — спецификация металлопроката (есть № п.п., массы по элементам
-    и общая масса); для неё имеет смысл семантика строк и арифметические
-    проверки. Всё остальное — `generic`: сетка и текст ячеек извлекаются как
-    есть, но роли не выдумываются и итоги не пересчитываются.
+    `spec_main` — спецификация металлопроката: есть массы по элементам и общая
+    масса плюс хотя бы одна графа обозначения (наименование группы, марка стали
+    или размер профиля). Для неё имеет смысл семантика строк и арифметические
+    проверки; всё остальное — `generic`: сетка и текст ячеек извлекаются как
+    есть, роли не выдумываются, итоги не пересчитываются.
+
+    Роль `position` (№ п.п.) при этом не обязательна: часть листов идёт без
+    нумерации позиций — «Техническая спецификация» на 26_020 (роли распознаны,
+    а таблица числилась `generic`, из-за чего арифметика не проверялась и
+    строки шапки уезжали в данные). Достаточно любой опознавательной графы:
+    номера позиции, размера профиля, группы профилей или марки стали.
     """
     roles = {c.role for c in cols}
-    if {"position", "element_mass", "total_mass"} <= roles:
+    if not {"element_mass", "total_mass"} <= roles:
+        return "generic"
+    if roles & {"position", "profile_size", "profile_group", "steel_grade"}:
         return "spec_main"
     return "generic"
 
@@ -893,7 +939,70 @@ def build_rows(grid: dict[tuple[int, int], Cell], cols: list[Column],
                     "row not separated by a ruling line; %d positions share one cell"
                     % len(positions))
                 out.append(sub)
+    _remark_reprinted_totals(out)
     return out
+
+
+def _remark_reprinted_totals(rows: list[LogicalRow]) -> int:
+    """Помечает перепечатанный итог («Всего профиля») строкой-итогом, а не данными.
+
+    Подпись «Всего профиля:» растровый OCR читает как «Всe z0 nрорunа:»: по
+    тексту маркер не опознать, а геометрический запасной вариант (объединённая
+    ячейка на три графы) не срабатывает — здесь подпись стоит в одной графе.
+    Строка оставалась данными, её числа попадали в сумму следующей группы, и
+    «Итого» следующей группы объявлялось расхождением: на KM_NAVES 0,03 против
+    1,35 (= 1,32 + 0,03), одиннадцать ложных падений арифметики.
+
+    Признак не зависит от языка и от того, что написано в подписи: строка без
+    обозначения профиля, все массовые значения которой в точности повторяют
+    предыдущую строку-итог, — это перепечатанный итог. Значения сохраняются как
+    есть, меняется только вид строки (и подпись, чтобы в выгрузке не оставалась
+    каша). Номер позиции в сравнение не входит: у «Итого» и у перепечатанного
+    итога он разный (3 и 4 на KM_NAVES).
+    """
+    def numeric(row: LogicalRow) -> dict[str, float]:
+        """Только массовые графы: номер позиции у соседних строк разный, и его
+        участие в сравнении ломало признак (в реальном листе 4 против 3)."""
+        return {key: float(cell.normalized_value)
+                for key, cell in row.cells.items()
+                if (key == "total_mass" or key.startswith("element:"))
+                and cell is not None and not cell.is_empty
+                and isinstance(cell.normalized_value, (int, float))}
+
+    fixed = 0
+    last_total: LogicalRow | None = None
+    for row in rows:
+        if row.kind in ("group_total", "profile_total", "grand_total"):
+            last_total = row
+            continue
+        if row.kind != "data" or last_total is None:
+            continue
+        # Обозначение профиля есть только у настоящей строки данных. Марку стали
+        # (колонку 2) проверять нельзя: на листах вроде 2300203_R_KM2 в неё
+        # попадает протянутое наименование группы, и признак переставал работать.
+        if (row.cells.get("profile_size") is not None
+                and (row.cells["profile_size"].text or "").strip()):
+            continue
+        marker = row.cells.get("profile_group")
+        if marker is None or not (marker.text or "").strip():
+            continue
+        cur, prev = numeric(row), numeric(last_total)
+        common = [key for key in cur if key in prev]
+        if len(common) < 2:
+            continue
+        if any(abs(cur[key] - prev[key]) > 1e-6 for key in common):
+            continue
+        row.kind = "profile_total"
+        marker.notes.append(
+            "строка-итог опознана по повтору значений предыдущего итога; raw=%r"
+            % marker.text)
+        marker.text = "Всего профиля"
+        marker.normalized_value = marker.text
+        marker.value_kind = "text"
+        marker.requires_review = True
+        last_total = row
+        fixed += 1
+    return fixed
 
 
 def split_sections(rows: list[LogicalRow]) -> list[tuple[str, list[LogicalRow]]]:

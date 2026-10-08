@@ -292,7 +292,17 @@ def is_drawing_grid(block: TableBlock, page_rect: fitz.Rect | None = None) -> bo
         if med < 8.0:
             return True
     if n_cols >= 15 and _gap_cv(block.xs) >= 0.8:
-        return True
+        # «Рваный шаг» сам по себе бывает и у настоящей спецификации: колонка
+        # «№ п.п.» узкая, «Наименование профиля» широкая, а толстые линии
+        # нарисованы ДВУМЯ параллельными штрихами с шагом ~2 pt — из-за них число
+        # колонок удваивается. Чертёжную сетку выдаёт доля узких промежутков:
+        # засечки размерных линий и штриховка. Замеры: потерянная «Техническая
+        # спецификация» на 2026.05.15 (28×17) — узких 40 %, линовка чертежа
+        # file-3 (105×62 и 3×28) — 70…77 %.
+        gaps = [b - a for a, b in zip(block.xs, block.xs[1:])]
+        narrow = sum(1 for g in gaps if g < 6.0)
+        if gaps and narrow / len(gaps) >= 0.5:
+            return True
     return False
 
 
@@ -470,6 +480,26 @@ def _aligned_separators(rl: list[Ruling], consts: list[float], perp: list[float]
     return sorted(out)
 
 
+def _drop_near_duplicates(vals: list[float], min_gap: float = 3.0) -> list[float]:
+    """Выбрасывает разделители, стоящие почти вплотную к соседнему.
+
+    Толстые линии рамки часть экспортеров рисует ДВУМЯ параллельными штрихами с
+    шагом ~2 pt, а склейка разделителей работает с допуском 1.5 pt — пара
+    оставалась двумя колонками. Каждая графа задваивалась, объединённая ячейка
+    ложилась копией в обе колонки, и масса строки считалась дважды: на
+    2026.05.15 «Итого» выходило ровно вдвое больше напечатанного (7,28 против
+    14,56, 2437,386 против 4874,772). Колонок и строк уже 3 pt в спецификациях
+    не бывает (самая узкая — «№ п.п.», около 15 pt), поэтому близкие
+    разделители — одна линия.
+    """
+    out: list[float] = []
+    for v in sorted(vals):
+        if out and v - out[-1] < min_gap:
+            continue
+        out.append(v)
+    return out
+
+
 def _build_grid(gh: list[Ruling], gv: list[Ruling],
                 bbox: tuple[float, float, float, float], tol: float = 1.5,
                 span_ratio: float = 0.30, edge_ratio: float = 0.70) -> TableBlock:
@@ -500,6 +530,12 @@ def _build_grid(gh: list[Ruling], gv: list[Ruling],
         ys.insert(0, ty)
     if by is not None:
         ys.append(by)
+
+    # Парные штрихи толстых линий — одна граница, иначе графы задваиваются
+    xs = _drop_near_duplicates(xs)
+    ys = _drop_near_duplicates(ys)
+    if len(xs) < 2 or len(ys) < 2:
+        return TableBlock(bbox, xs, ys, [], 0, 0)
 
     ys = _regularize_pitch(ys)
     n_rows, n_cols = len(ys) - 1, len(xs) - 1

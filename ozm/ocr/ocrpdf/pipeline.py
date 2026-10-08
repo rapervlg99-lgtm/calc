@@ -533,8 +533,9 @@ def run(pdf_path: str, out_dir: str, opts: Options | None = None) -> dict:
         "cells_by_source": {},
         "tables_unreadable": 0,
         "table_quality": [],
-        "arithmetic_checks": {"passed": 0, "failed": 0, "skipped": 0},
+        "arithmetic_checks": {"passed": 0, "failed": 0, "skipped": 0, "note": 0},
         "failed_checks": [],
+        "notes": [],
         "pages": [],
         "files": [],
         "warnings": [],
@@ -582,7 +583,7 @@ def run(pdf_path: str, out_dir: str, opts: Options | None = None) -> dict:
                 "notes": table.notes,
             })
             stats = summarize(table.checks)
-            for key in ("passed", "failed", "skipped"):
+            for key in ("passed", "failed", "skipped", "note"):
                 report["arithmetic_checks"][key] += stats.get(key, 0)
             for chk in table.checks:
                 if chk.status == "failed":
@@ -590,6 +591,14 @@ def run(pdf_path: str, out_dir: str, opts: Options | None = None) -> dict:
                         "table": table.index, "row": chk.row, "kind": chk.kind,
                         "expected": chk.expected, "calculated": chk.calculated,
                         "delta": chk.delta, "tolerance": chk.tolerance,
+                        "reason": chk.reason,
+                    })
+                elif chk.status == "note":
+                    # Замечание, а не расхождение: сравнивать не с чем (итог в
+                    # чертеже не заполнен), но человеку это знать нужно.
+                    report["notes"].append({
+                        "table": table.index, "row": chk.row, "kind": chk.kind,
+                        "column": chk.column, "calculated": chk.calculated,
                         "reason": chk.reason,
                     })
             base = os.path.join(out_dir, "table_%d" % table.index)
