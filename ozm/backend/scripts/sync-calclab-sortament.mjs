@@ -9,7 +9,13 @@ const backend = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const source = path.resolve(process.argv[2] || path.join(backend, '../../../calclab.pro'));
 const write = process.argv.includes('--write');
 const dataDir = path.join(source, 'frontend/public/data/fire-protection');
-const catalogPath = path.join(dataDir, 'profile_catalog_ivan_v028_stage2.json');
+// Каталог в репозитории кальклаба переименован (09.10.2026): вместо
+// profile_catalog_ivan_v028_stage2.json лежит один profile-catalog.json.
+const catalogPath = [
+  path.join(dataDir, 'profile_catalog_ivan_v028_stage2.json'),
+  path.join(dataDir, 'profile-catalog.json'),
+].find((p) => fs.existsSync(p));
+if (!catalogPath) throw new Error('нет каталога профилей в ' + dataDir);
 const indexPath = path.join(dataDir, 'gost-catalog-index.json');
 const read = (p) => JSON.parse(fs.readFileSync(p, 'utf8'));
 const hash = (p) => crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex');

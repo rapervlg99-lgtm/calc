@@ -1,15 +1,15 @@
 {
   "source": "CalcLab /references/metalloprokat",
-  "catalogSha256": "e24025d7ae3528fc7310b1915ea86c0367e53b3b9d5d0fcce8c03a09a5cb5d59",
-  "gostIndexSha256": "804ec19765dc60dd0e0d884e02726638d31b000f904aec3ed8af7b553ceaa202",
-  "sourceCatalogRows": 3755,
-  "referenceProfiles": 3555,
-  "excludedOrHiddenRows": 200,
-  "legacyProfilesPreserved": 2594,
-  "sourceProfilesWithLegacyGeometry": 1752,
-  "sourceProfilesWithoutLegacyGeometry": 1803,
-  "addedStandardQualifiedProfiles": 3555,
-  "totalRollProfiles": 6149,
+  "catalogSha256": "23c0d28485e1416ff20764e5700b10c80a0ac766aa40e1f72253aef96b82c338",
+  "gostIndexSha256": "a4d17e1964d58013e9b90f02632f82ec42fa8a67d8d462302795a069ea6b51ae",
+  "sourceCatalogRows": 6060,
+  "referenceProfiles": 5984,
+  "excludedOrHiddenRows": 76,
+  "legacyProfilesPreserved": 3875,
+  "sourceProfilesWithLegacyGeometry": 2393,
+  "sourceProfilesWithoutLegacyGeometry": 3591,
+  "addedStandardQualifiedProfiles": 5797,
+  "totalRollProfiles": 9859,
   "groups": [
     {
       "shape": "i_section",
@@ -45,7 +45,7 @@
       "shape": "channel_unequal",
       "standard": "ГОСТ 8281-80",
       "status": "current",
-      "profiles": 116
+      "profiles": 111
     },
     {
       "shape": "angle",
@@ -61,7 +61,7 @@
     },
     {
       "shape": "tee",
-      "standard": "неизвестно",
+      "standard": "ГОСТ 26020-83 (½)",
       "status": "no_gost",
       "profiles": 72
     },
@@ -75,7 +75,7 @@
       "shape": "rhs_shs",
       "standard": "ГОСТ 30245-2003",
       "status": "current",
-      "profiles": 587
+      "profiles": 586
     },
     {
       "shape": "rhs_shs",
@@ -85,9 +85,21 @@
     },
     {
       "shape": "chs",
+      "standard": "ГОСТ 8732-2025",
+      "status": "current",
+      "profiles": 1793
+    },
+    {
+      "shape": "chs",
       "standard": "ГОСТ 33228-2015",
       "status": "current",
-      "profiles": 1442
+      "profiles": 769
+    },
+    {
+      "shape": "chs",
+      "standard": "ГОСТ 10704-91",
+      "status": "current",
+      "profiles": 1315
     }
   ]
 }
