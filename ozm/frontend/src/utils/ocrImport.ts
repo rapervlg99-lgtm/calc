@@ -533,6 +533,23 @@ export function resolveMassPerMeter(
       const res = { mpm: hits[0].massPerMeter, source: 'cache' as MassSource }
       return sameEdition ? res : miss(res)
     }
+    // Однозначного совпадения под стандартом листа нет (на «Ведомости» под
+    // «СТО АСЧМ 20-93» нет 45Ш4, 25Ш2, 22П, 27П): пробуем родственные редакции
+    // того же профиля по данным кальклаба. Масса подставляется, но строка
+    // помечается — редакция в листе и в справочнике разные.
+    const rel = sourceRollsForGost(roll, gostProfile, true)
+    const relPool = shapes ? rel.filter((r) => shapes.includes(r.shape)) : rel
+    const relHits = relPool.filter((r) => markAliases(r.label).some((a) => candidates.has(a)))
+    // Одна и та же марка бывает в двух родственных редакциях (45Ш4 — и в
+    // Р 57837-2017, и в 35087-2024). Если масса у них одна — берём её; если
+    // разная, берём действующую редакцию по данным кальклаба.
+    const relMasses = new Set(relHits.map((r) => r.massPerMeter).filter(Boolean))
+    const relPick = relHits.length === 1 || relMasses.size === 1
+      ? relHits[0]
+      : relHits.find((r) => (r as { standardStatus?: string }).standardStatus === 'current')
+    if (relPick && relPick.massPerMeter) {
+      return miss({ mpm: relPick.massPerMeter, source: 'cache' })
+    }
     // Missing or ambiguous marks in a known standard require manual review.
     // Do not fall back to an identically named mark from another standard.
     return miss({ mpm: null, source: '' })
