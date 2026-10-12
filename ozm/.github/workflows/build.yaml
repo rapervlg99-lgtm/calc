@@ -1,0 +1,208 @@
+# Шаблон скилла tnlife-miniapp-engineering: workflow build.yaml.
+# Норма — 01-corp-standard.md, «CI: workflow по шаблону», и §2.1 корп. шаблона.
+# Подставьте ozm; реестр образов и хост прокси — плейсхолдеры, значения
+# выдаёт служба эксплуатации (те же, что DOCKER_REGISTRY и DOCKER_PROXY_HOST_1
+# в infra/Makefile).
+#
+# КУДА КЛАСТЬ: .github/workflows/build.yaml — рядом с tests.yaml,
+# service-contour.yaml (оба из templates/code/ci/) и security.yaml (состав §3
+# корп. шаблона: build + tests + service-<контур>; security.yaml — из §9.3).
+# Синтаксис — GitHub Actions, его проверяет actionlint из pre-commit.
+#
+# ЧТО ДЕЛАЕТ. Собирает оба образа ТОЙ ЖЕ целью, что и разработчик локально —
+# `make -C infra build`, но корпоративным набором образов
+# (REGISTRY_PROFILE=corp: каждый FROM через прокси, рантайм api — distroless;
+# решение D8, шапка Dockerfile.backend), сканирует собранное Trivy (CVE) и
+# Dockle (практики образа) и только после этого публикует в реестр. Скан ДО
+# push, а не после: образ с CRITICAL/HIGH в реестр не попадает.
+# На pull_request сборка и скан идут, публикации нет.
+#
+# ТЕГ ОБРАЗА: git-тег v* → как есть; main → main-<8 символов SHA>;
+# pull_request → pr-<8 символов SHA>; ручной запуск — вход image_tag. Тот же
+# тег подаётся на вход service-contour.yaml при пересоздании ВМ контура.
+#
+# СЕКРЕТЫ (readme-deploy §10): DOCKER_REGISTRY_KEY — base64 JSON-ключа
+# сервисной учётной записи реестра. Форма входа `--username json_key`
+# соответствует Yandex Container Registry (§4.3); другой реестр — другой шаг
+# входа, реестр задаёт эксплуатация.
+#
+# ПОЛИРЕПО. Цель build читает backend/, frontend/ и tn-bridge/ из одного
+# рабочего каталога; в четырёхрепозиторной раскладке перед сборкой нужен
+# чекаут соседних репозиториев — REPLACE_WITH_CROSS_REPO_CHECKOUT_STEP
+# (открытый вопрос 01 «Раскладка», templates/code/README.md).
+#
+# Ревизии actions — ТОЧНЫЕ теги, те же, что в security.yaml (таблица и SHA
+# там: checkout v4.4.0, trivy-action v0.28.0, codeql-action v3.37.9). Новый
+# здесь только один:
+# | uses                        | тег     | commit SHA (git ls-remote)               |
+# |-----------------------------|---------|------------------------------------------|
+# | goodwithtech/dockle-action  | v0.4.15 | e30e6af832aad6ea7dca2a248d31a85eab6dbd68 |
+# При первом прогоне переведите uses: на SHA — только это закрывает подмену
+# тега. Раннер — ubuntu-24.04 во всех четырёх workflow, как в §4.3.
+#
+# Как проверить: python3 -c "import yaml; yaml.safe_load(open('.github/workflows/build.yaml'))";
+# actionlint .github/workflows/build.yaml; ту же сборку локально даёт
+# `make -C infra build REGISTRY_PROFILE=corp DOCKER_PROXY_HOST_1=<прокси>`.
+
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Тег образа (по умолчанию — из ветки или git-тега)"
+        required: false
+        default: ""
+
+# security-events: write — только для upload-sarif (Code Scanning). Без
+# Advanced Security шаги upload-sarif удаляются; гейты падают по exit-code.
+permissions:
+  contents: read
+  security-events: write
+
+env:
+  SERVICE: ozm
+  DOCKER_REGISTRY: REPLACE_WITH_IMAGE_REGISTRY
+  DOCKER_PROXY_HOST_1: REPLACE_WITH_DOCKER_PROXY_HOST
+  RUNTIME_IMAGE: gcr.io/distroless/static-debian12:nonroot
+
+jobs:
+  build:
+    name: Build, scan, push
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.4.0  # pin: v4.4.0 → зафиксировать SHA при первом прогоне: git ls-remote
+
+      # Только для четырёхрепозиторной раскладки: чекаут соседних репозиториев
+      # в общий рабочий каталог — REPLACE_WITH_CROSS_REPO_CHECKOUT_STEP.
+      # В монорепо шаг не нужен, чекаута выше достаточно.
+
+      # Тег собирается из двух источников, которыми управляет НЕ автор
+      # воркфлоу: строки ввода workflow_dispatch и имени git-тега. Оба доходят
+      # до шага только через env (свободная строка в `run:` подставляется до
+      # разбора shell — это инъекция выражения), и оба проверяются по форме
+      # тега Docker ДО первого использования: право на dispatch или на push
+      # тега не равно праву на секреты реестра.
+      # Как проверить: dispatch с image_tag `v1$(id)` роняет job на этом шаге,
+      # а не печатает вывод `id` в логе сборки.
+      - name: Тег образа
+        id: tag
+        env:
+          INPUT_TAG: ${{ github.event.inputs.image_tag }}
+        run: |
+          if [[ -n "${INPUT_TAG}" ]]; then
+            TAG="${INPUT_TAG}"
+          elif [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            TAG="${GITHUB_REF#refs/tags/}"
+          elif [[ "${GITHUB_REF}" == refs/heads/main ]]; then
+            TAG="main-${GITHUB_SHA::8}"
+          else
+            TAG="pr-${GITHUB_SHA::8}"
+          fi
+          # Грамматика тега Docker: буква/цифра/подчёркивание в начале, дальше
+          # буквы, цифры, точка, дефис, подчёркивание; до 128 символов. Ни
+          # одного символа, значимого для shell, в неё не входит.
+          printf '%s' "${TAG}" | grep -qE '^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$' || {
+            echo "Тег '${TAG}' не подходит под грамматику тега Docker"; exit 1; }
+          echo "tag=${TAG}" >> "${GITHUB_OUTPUT}"
+          echo "Тег образов: ${TAG}"
+
+      # DOCKER_REGISTRY, DOCKER_PROXY_HOST_1 и RUNTIME_IMAGE Makefile берёт из
+      # окружения job (env выше): набор corp задан в одном месте. IMAGE_TAG —
+      # через env, а не подстановкой ${{ … }} прямо в run (см. шаг выше).
+      - name: Сборка образов (make -C infra build, набор corp)
+        env:
+          IMAGE_TAG: ${{ steps.tag.outputs.tag }}
+        run: make -C infra build REGISTRY_PROFILE=corp IMAGE_TAG="${IMAGE_TAG}"
+
+      # Trivy по собранному, ещё не опубликованному образу: находка
+      # CRITICAL/HIGH роняет job до push. Порог и allowlist — те же, что в
+      # security.yaml (.trivyignore: owner, reason, expires).
+      - name: Trivy image (api)
+        uses: aquasecurity/trivy-action@v0.28.0  # pin: v0.28.0 → зафиксировать SHA при первом прогоне: git ls-remote
+        with:
+          image-ref: ${{ env.DOCKER_REGISTRY }}/${{ env.SERVICE }}-api:${{ steps.tag.outputs.tag }}
+          format: sarif
+          output: trivy-image-api.sarif
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+          trivyignores: .trivyignore
+
+      - name: Trivy image (web)
+        uses: aquasecurity/trivy-action@v0.28.0  # pin: v0.28.0 → зафиксировать SHA при первом прогоне: git ls-remote
+        if: always()
+        with:
+          image-ref: ${{ env.DOCKER_REGISTRY }}/${{ env.SERVICE }}-web:${{ steps.tag.outputs.tag }}
+          format: sarif
+          output: trivy-image-web.sarif
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+          trivyignores: .trivyignore
+
+      - name: Upload Trivy SARIF (api)
+        uses: github/codeql-action/upload-sarif@v3.37.9  # pin: v3.37.9 → зафиксировать SHA при первом прогоне: git ls-remote
+        if: always()
+        with:
+          sarif_file: trivy-image-api.sarif
+          category: trivy-image-api
+
+      - name: Upload Trivy SARIF (web)
+        uses: github/codeql-action/upload-sarif@v3.37.9  # pin: v3.37.9 → зафиксировать SHA при первом прогоне: git ls-remote
+        if: always()
+        with:
+          sarif_file: trivy-image-web.sarif
+          category: trivy-image-web
+
+      # Dockle: практики образа (non-root, нет :latest, HEALTHCHECK, …).
+      # exit-level WARN — предупреждение тоже роняет job.
+      - name: Dockle (api)
+        uses: goodwithtech/dockle-action@v0.4.15  # pin: v0.4.15 → зафиксировать SHA при первом прогоне: git ls-remote
+        with:
+          image: ${{ env.DOCKER_REGISTRY }}/${{ env.SERVICE }}-api:${{ steps.tag.outputs.tag }}
+          exit-code: "1"
+          exit-level: WARN
+
+      - name: Dockle (web)
+        uses: goodwithtech/dockle-action@v0.4.15  # pin: v0.4.15 → зафиксировать SHA при первом прогоне: git ls-remote
+        with:
+          image: ${{ env.DOCKER_REGISTRY }}/${{ env.SERVICE }}-web:${{ steps.tag.outputs.tag }}
+          exit-code: "1"
+          exit-level: WARN
+
+      # Ключ реестра живёт в файле только на время docker login и в лог не
+      # попадает (--password-stdin). Хост реестра — часть DOCKER_REGISTRY до
+      # первого слэша.
+      - name: Вход в реестр образов
+        if: github.event_name != 'pull_request'
+        env:
+          REGISTRY_KEY_B64: ${{ secrets.DOCKER_REGISTRY_KEY }}
+        run: |
+          printf '%s' "${REGISTRY_KEY_B64}" | base64 -d > "${RUNNER_TEMP}/registry-key.json"
+          docker login --username json_key --password-stdin "${DOCKER_REGISTRY%%/*}" < "${RUNNER_TEMP}/registry-key.json"
+          rm -f "${RUNNER_TEMP}/registry-key.json"
+
+      - name: Публикация образов
+        if: github.event_name != 'pull_request'
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          docker push "${DOCKER_REGISTRY}/${SERVICE}-api:${TAG}"
+          docker push "${DOCKER_REGISTRY}/${SERVICE}-web:${TAG}"
+
+      - name: Итог
+        if: github.event_name != 'pull_request'
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          {
+            echo "### Образы опубликованы"
+            echo "- \`${DOCKER_REGISTRY}/${SERVICE}-api:${TAG}\`"
+            echo "- \`${DOCKER_REGISTRY}/${SERVICE}-web:${TAG}\`"
+            echo "- Деплой: service-contour.yaml, вход image_tag = \`${TAG}\`"
+          } >> "${GITHUB_STEP_SUMMARY}"

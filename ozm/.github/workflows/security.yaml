@@ -1,0 +1,302 @@
+# Шаблон скилла tnlife-miniapp-engineering: workflow security.yaml.
+# Норма — 01-corp-standard.md, «CI: workflow по шаблону». Подставьте пути
+# backend/ и frontend/ под раскладку своего репозитория (в полирепо — от корня
+# того репозитория, где лежит workflow) и список разрешённых лицензий.
+#
+# КУДА КЛАСТЬ: .github/workflows/security.yaml — рядом с build.yaml,
+# tests.yaml и service-contour.yaml из templates/code/ci/ (состав §3 корп.
+# шаблона: build + tests + service-<контур>; security.yaml — из §9.3).
+# Синтаксис — GitHub Actions, его же
+# проверяет actionlint из pre-commit. Где эти workflow исполняются при коде
+# в GitLab — вопрос владельцу шаблона (01 «Где исполняется CI»); зеркальный
+# .gitlab-ci.yml, если он нужен, повторяет те же команды job'ами и НЕ заменяет
+# этот файл.
+#
+# Состав по 01 «CI»: gitleaks, gosec, govulncheck, npm audit, osv-scanner,
+# Trivy fs и config, hadolint, проверка лицензий. Порог блокировки —
+# CRITICAL/HIGH. Отличия от типового workflow — все в сторону «гейт падает по-настоящему»
+# (урок П-03, 11-lessons.md): у gosec снят continue-on-error, у hadolint снят
+# no-fail, у Trivy задан exit-code 1 (по умолчанию у trivy-action exit-code 0:
+# скан отрабатывает, а job зелёный при любых находках).
+#
+# Конфиги инструментов лежат в lint/ этого каталога и копируются в корень
+# репозитория с точкой в имени: .gitleaks.toml, .gosec.yaml, .hadolint.yaml,
+# .trivyignore.
+#
+# Тот же набор БЕЗ CI — для архива чужого MVP (15-mvp-onboarding.md §3) или
+# локальной проверки перед PR; команды из корня дерева:
+#   gitleaks detect --no-git --source . --config .gitleaks.toml --redact
+#   (cd backend && gosec -conf ../.gosec.yaml -severity medium -confidence medium ./... && govulncheck ./...)
+#   (cd frontend && npm audit --audit-level=high)
+#   osv-scanner --recursive .          # любой язык, в том числе Python-архив
+#   trivy fs     --severity CRITICAL,HIGH --exit-code 1 --ignorefile .trivyignore .
+#   trivy config --severity CRITICAL,HIGH --exit-code 1 --ignorefile .trivyignore .
+#   hadolint --config .hadolint.yaml backend/Dockerfile frontend/Dockerfile
+#   (cd backend && go-licenses check ./... --allowed_licenses=<список из job licenses>)
+#
+# Ревизии actions и Go-инструментов — ТОЧНЫЕ теги: с плавающими v4/v5/v3/v2,
+# securego/gosec@master и go install @latest состав гейта меняется без MR, а
+# ссылки вида google/osv-scanner-action@v1 и aquasecurity/trivy-action@0.28.0
+# не разрешаются вовсе — таких тегов нет. Тег фиксирует то, во что плавающая
+# ссылка разрешалась при сборке набора (git ls-remote), поведение шагов от
+# этого не меняется. SHA сняты тем же ls-remote и перечислены ниже — при
+# первом прогоне перепроверьте
+# (git ls-remote --tags https://github.com/<owner>/<repo> <tag>) и переведите
+# uses: на SHA: только это закрывает подмену тега. Поднимать версии —
+# осознанно и отдельным PR, как rev в pre-commit-config.yaml; инструменты,
+# которые есть и там, идут одной версией (таблица в его шапке).
+# | uses / go install                            | тег     | commit SHA (git ls-remote)               |
+# |----------------------------------------------|---------|------------------------------------------|
+# | actions/checkout                             | v4.4.0  | 11d5960a326750d5838078e36cf38b85af677262 |
+# | actions/setup-go                             | v5.6.0  | 40f1582b2485089dde7abd97c1529aa768e1baff |
+# | actions/setup-node                           | v4.4.0  | 49933ea5288caeca8642d1e84afbd3f7d6820020 |
+# | github/codeql-action/upload-sarif            | v3.37.9 | 6f5948dfacef28e207b48d0905cf90c03365536d |
+# | gitleaks/gitleaks-action                     | v2.3.9  | ff98106e4c7b2bc287b24eaf42907196329070c7 |
+# | securego/gosec                               | v2.29.0 | deb54465fea23d19a77f037e11e6589021f8501d |
+# | google/osv-scanner-action/osv-scanner-action | v2.5.1  | 6e4298ebc4db23e847df9b2e2de2939d6f066c67 |
+# | aquasecurity/trivy-action                    | v0.28.0 | 915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2 |
+# | hadolint/hadolint-action                     | v3.1.0  | 54c9adbab1582c2ef04b2016b760714a4bfde3cf |
+# | golang.org/x/vuln/cmd/govulncheck            | v1.7.0  | Go-модуль: пин — версия модуля           |
+# | github.com/google/go-licenses                | v1.6.0  | Go-модуль: пин — версия модуля           |
+# Примечания к пинам:
+# - checkout, setup-go, setup-node, codeql-action, gitleaks-action: тег = то, во
+#   что разрешался плавающий мажор на дату; выше уже есть новые мажоры
+#   (checkout и setup-* до v7, codeql-action v4.x, gitleaks-action v3.0.0).
+# - securego/gosec: @master не годится — плавающая ветка. Образ gosec внутри
+#   action у upstream на релиз старше тега — сверьте `gosec -version` в логе
+#   первого прогона.
+# - google/osv-scanner-action: @v1 без подкаталога не годится — тега v1 нет
+#   (последний v1.x — v1.9.2), а корневой action.yml без runs; см. комментарий
+#   у шага.
+# - aquasecurity/trivy-action: @0.28.0 не годится — тега без v нет; пин —
+#   v0.28.0, та же версия с префиксом v.
+# - hadolint/hadolint-action v3.1.0 несёт hadolint v2.12.0 = rev в pre-commit.
+# - govulncheck v1.7.0 и go-licenses v1.6.0 — то, во что разрешался @latest на
+#   дату (go-licenses v2 живёт по пути /v2 и требует ревью флагов).
+# - runs-on: ubuntu-24.04, а не ubuntu-latest — один и тот же образ раннера во
+#   всех четырёх workflow (ci/build.yaml, ci/tests.yaml, ci/service-contour.yaml),
+#   как в §4.3 корп. шаблона; latest плывёт вместе с набором инструментов раннера.
+
+name: Security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Ночной скан — ловим свежие CVE в уже смёрженном коде
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+
+# security-events: write нужен только шагам upload-sarif (GitHub Code Scanning).
+# Для приватного репозитория Code Scanning требует включённого Advanced
+# Security; если его нет — удалите шаги upload-sarif, блокировка не теряется:
+# каждый гейт падает по собственному exit-code.
+permissions:
+  security-events: write
+  contents: read
+
+jobs:
+  secrets:
+    name: Secrets scan (gitleaks)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.4.0  # pin: v4.4.0 → зафиксировать SHA при первом прогоне: git ls-remote
+        with:
+          fetch-depth: 0   # вся история: секрет, удалённый следующим коммитом, всё равно утёк
+
+      - name: Gitleaks
+        uses: gitleaks/gitleaks-action@v2.3.9  # pin: v2.3.9 → зафиксировать SHA при первом прогоне: git ls-remote
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Конфиг передаётся переменной окружения, а не входом with (так у
+          # самого action). Без неё action ищет gitleaks.toml БЕЗ точки в корне.
+          GITLEAKS_CONFIG: .gitleaks.toml
+          # Версия самого gitleaks — та же, что rev хука в pre-commit-config.yaml
+          # (v8.21.2, без v). Без неё action берёт версию, зашитую в него самого,
+          # и локальная проверка расходится с CI. Поднимать — вместе с rev.
+          GITLEAKS_VERSION: "8.21.2"
+          # Для репозиториев организации action требует ключ лицензии
+          # (бесплатный, получается у авторов gitleaks); для личных — нет.
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+
+  go-sast:
+    name: Go SAST (gosec + govulncheck)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.4.0  # pin: v4.4.0 → зафиксировать SHA при первом прогоне: git ls-remote
+
+      - name: Set up Go
+        uses: actions/setup-go@v5.6.0  # pin: v5.6.0 → зафиксировать SHA при первом прогоне: git ls-remote
+        with:
+          go-version-file: backend/go.mod
+
+      # Блокирующий шаг (02 §12): находки medium/medium и выше роняют job.
+      # Формат конфига gosec — JSON, см. lint/gosec.yaml.
+      - name: gosec
+        uses: securego/gosec@v2.29.0  # pin: v2.29.0 → зафиксировать SHA при первом прогоне: git ls-remote
+        with:
+          args: "-conf .gosec.yaml -severity medium -confidence medium -fmt sarif -out gosec.sarif ./backend/..."
+
+      - name: Upload gosec SARIF
+        uses: github/codeql-action/upload-sarif@v3.37.9  # pin: v3.37.9 → зафиксировать SHA при первом прогоне: git ls-remote
+        if: always()
+        with:
+          sarif_file: gosec.sarif
+          category: gosec
+
+      - name: govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@v1.7.0  # pin: v1.7.0 → см. таблицу в шапке
+          cd backend && govulncheck ./...
+
+  node-audit:
+    name: Node SCA (npm audit)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.4.0  # pin: v4.4.0 → зафиксировать SHA при первом прогоне: git ls-remote
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4.4.0  # pin: v4.4.0 → зафиксировать SHA при первом прогоне: git ls-remote
+        with:
+          node-version: "22"
+
+      # Кит ставится из корпоративного npm-реестра (норма 01 «Стек»), поэтому
+      # шагу нужен .npmrc фронта и токен в переменной окружения. Каким шагом
+      # конвейера они раскладываются — REPLACE_WITH_NPM_TOKEN_PIPELINE_STEP,
+      # открытый вопрос в templates/code/README.md. При ките, вендоренном по
+      # ADR, ни файла, ни токена не нужно.
+      - name: npm audit (frontend)
+        working-directory: frontend
+        run: npm audit --audit-level=high
+
+  deps:
+    name: Dependencies SCA (osv-scanner + trivy fs)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.4.0  # pin: v4.4.0 → зафиксировать SHA при первом прогоне: git ls-remote
+
+      # Action лежит в подкаталоге репозитория — корневой action.yml без runs
+      # и входов, с ним шаг не стартует. Upstream рекомендует свой reusable
+      # workflow, но тот сам делает checkout и upload-sarif; прямой action
+      # оставлен, чтобы job остался цепочкой шагов с составом из шапки. Образ
+      # внутри action пинуется тем же тегом. Находка — ненулевой exit, job падает.
+      - name: osv-scanner
+        uses: google/osv-scanner-action/osv-scanner-action@v2.5.1  # pin: v2.5.1 → зафиксировать SHA при первом прогоне: git ls-remote
+        with:
+          scan-args: |-
+            --recursive
+            ./
+
+      - name: Trivy filesystem scan
+        uses: aquasecurity/trivy-action@v0.28.0  # pin: v0.28.0 → зафиксировать SHA при первом прогоне: git ls-remote
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: sarif
+          output: trivy-fs.sarif
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+          trivyignores: .trivyignore
+
+      - name: Upload Trivy fs SARIF
+        uses: github/codeql-action/upload-sarif@v3.37.9  # pin: v3.37.9 → зафиксировать SHA при первом прогоне: git ls-remote
+        if: always()
+        with:
+          sarif_file: trivy-fs.sarif
+          category: trivy-fs
+
+  dockerfile:
+    name: Dockerfile lint (hadolint)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.4.0  # pin: v4.4.0 → зафиксировать SHA при первом прогоне: git ls-remote
+
+      # Порог падения задаёт failure-threshold в .hadolint.yaml (warning).
+      # Третий образ — третий шаг: список Dockerfile здесь такой же явный, как
+      # в проверках [6/15] и [15/15] у tests/run.sh.
+      - name: hadolint backend/Dockerfile
+        uses: hadolint/hadolint-action@v3.1.0  # pin: v3.1.0 → зафиксировать SHA при первом прогоне: git ls-remote
+        with:
+          dockerfile: backend/Dockerfile
+          config: .hadolint.yaml
+          format: sarif
+          output-file: hadolint-api.sarif
+
+      - name: hadolint frontend/Dockerfile
+        uses: hadolint/hadolint-action@v3.1.0  # pin: v3.1.0 → зафиксировать SHA при первом прогоне: git ls-remote
+        if: always()
+        with:
+          dockerfile: frontend/Dockerfile
+          config: .hadolint.yaml
+          format: sarif
+          output-file: hadolint-web.sarif
+
+      - name: Upload hadolint SARIF (api)
+        uses: github/codeql-action/upload-sarif@v3.37.9  # pin: v3.37.9 → зафиксировать SHA при первом прогоне: git ls-remote
+        if: always()
+        with:
+          sarif_file: hadolint-api.sarif
+          category: hadolint-api
+
+      - name: Upload hadolint SARIF (web)
+        uses: github/codeql-action/upload-sarif@v3.37.9  # pin: v3.37.9 → зафиксировать SHA при первом прогоне: git ls-remote
+        if: always()
+        with:
+          sarif_file: hadolint-web.sarif
+          category: hadolint-web
+
+  iac:
+    name: IaC scan (trivy config)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.4.0  # pin: v4.4.0 → зафиксировать SHA при первом прогоне: git ls-remote
+
+      - name: Trivy config scan
+        uses: aquasecurity/trivy-action@v0.28.0  # pin: v0.28.0 → зафиксировать SHA при первом прогоне: git ls-remote
+        with:
+          scan-type: config
+          scan-ref: .
+          format: sarif
+          output: trivy-iac.sarif
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+          trivyignores: .trivyignore
+
+      - name: Upload Trivy IaC SARIF
+        uses: github/codeql-action/upload-sarif@v3.37.9  # pin: v3.37.9 → зафиксировать SHA при первом прогоне: git ls-remote
+        if: always()
+        with:
+          sarif_file: trivy-iac.sarif
+          category: trivy-iac
+
+  licenses:
+    name: License check (schedule and manual run)
+    runs-on: ubuntu-24.04
+    # По расписанию и вручную: новая зависимость с чужой
+    # лицензией всплывает на ночном прогоне, а не блокирует каждый PR.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.4.0  # pin: v4.4.0 → зафиксировать SHA при первом прогоне: git ls-remote
+
+      - name: Set up Go
+        uses: actions/setup-go@v5.6.0  # pin: v5.6.0 → зафиксировать SHA при первом прогоне: git ls-remote
+        with:
+          go-version-file: backend/go.mod
+
+      # Список лицензий — ориентир; корпоративно утверждённого перечня в
+      # источниках нет — подтвердите у службы ИБ до первого прогона.
+      # Проверки лицензий фронта (npm) в шаблоне нет — см. «Открытые
+      # вопросы» в README каталога.
+      - name: go-licenses (backend)
+        run: |
+          go install github.com/google/go-licenses@v1.6.0  # pin: v1.6.0 → см. таблицу в шапке
+          cd backend && go-licenses check ./... --allowed_licenses=MIT,Apache-2.0,BSD-2-Clause,BSD-3-Clause,ISC,MPL-2.0

@@ -1,0 +1,47 @@
+# Шаблон скилла tnlife-miniapp-engineering: правила semgrep.
+# Хук semgrep в pre-commit ссылается на каталог .semgrep/: без него хук молча падал бы у каждого, у кого semgrep
+# установлен. Здесь — минимальный набор из двух правил, каждое выведено из
+# нормы; расширяйте своими.
+#
+# КУДА КЛАСТЬ: .semgrep/rules.yaml в корне репозитория — каталог С ТОЧКОЙ.
+# Его читает хук semgrep из pre-commit-config.yaml
+# (--config=.semgrep/rules.yaml --error).
+#
+# Проверка: `semgrep --config=.semgrep/rules.yaml --validate` — правила
+# разбираются; `semgrep --config=.semgrep/rules.yaml --error .` — ноль находок
+# на чистом дереве. При сборке шаблона semgrep не был установлен: файл
+# проверен только как YAML, прогоните --validate у себя до первого коммита.
+
+rules:
+  # 01 «ЗАПРЕЩЕНО» и проверка [13/15]: CREATE EXTENSION в миграциях — у
+  # приложения нет прав на расширения managed PostgreSQL. Единственное
+  # разрешённое место — init-скрипт локального контейнера БД (02 §5), поэтому
+  # правило смотрит только в каталоги миграций. Комментарии SQL generic-режим
+  # не различает — авторитетна проверка [13/15]; здесь ранний сигнал в редакторе.
+  - id: tnlife-no-create-extension-in-migrations
+    languages: [generic]
+    paths:
+      include:
+        - "migrations/*.sql"
+        - "*/migrations/*.sql"
+    pattern-either:
+      - pattern: CREATE EXTENSION
+      - pattern: create extension
+    message: >-
+      CREATE EXTENSION в миграциях запрещён (01 «ЗАПРЕЩЕНО», проверка [13/15]):
+      на managed-кластере расширения включает его конфигурация, у приложения
+      прав нет. Локально — infra/env.local/postgres/init.sql, и только те
+      расширения, что включены в конфигурации кластера контура.
+    severity: ERROR
+
+  # 02 §13 и чек-лист 02: у http.Server заданы все четыре таймаута и есть
+  # graceful shutdown по SHUTDOWN_TIMEOUT. http.ListenAndServe поднимает сервер
+  # без таймаутов и без ручки остановки — такой сервис не гасится корректно
+  # при деплое и держит медленные соединения бесконечно.
+  - id: tnlife-go-listenandserve-without-server
+    languages: [go]
+    pattern: http.ListenAndServe($ADDR, $HANDLER)
+    message: >-
+      Поднимайте http.Server с ReadHeaderTimeout, ReadTimeout, WriteTimeout,
+      IdleTimeout и Shutdown по SHUTDOWN_TIMEOUT (02 §13), а не http.ListenAndServe.
+    severity: ERROR

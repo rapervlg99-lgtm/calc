@@ -1,0 +1,44 @@
+---
+# Шаблон скилла tnlife-miniapp-engineering: конфиг yamllint.
+# Подставлять нечего; список ignore
+# сверьте со своей раскладкой.
+#
+# КУДА КЛАСТЬ: корень репозитория под именем .yamllint.yml — С ТОЧКОЙ.
+# Его читает хук yamllint из pre-commit-config.yaml (args: -c .yamllint.yml).
+#
+# line-length 240, а не 80 по умолчанию: строки entry: локальных хуков в
+# .pre-commit-config.yaml в одну строку короче не укладываются — самая длинная
+# из поставляемых 233 символа (хук semgrep). Число измерено, а не выбрано:
+# при 160 гейт печатал четыре warning'а на собственных заготовках, а гейт,
+# который шумит на каркасе, перестают читать.
+# Как проверить: `yamllint -c .yamllint.yml .` на свежем каркасе — ни одной
+# строки вывода (проверено на каркасе набора).
+# truthy с check-keys: false — иначе ключ `on:` в workflow считается ошибкой.
+
+extends: default
+
+rules:
+  line-length:
+    max: 240
+    level: warning
+  comments:
+    min-spaces-from-content: 1
+  comments-indentation: disable
+  document-start: disable
+  truthy:
+    allowed-values: ["true", "false"]
+    check-keys: false
+  braces:
+    max-spaces-inside: 1
+  brackets:
+    max-spaces-inside: 1
+
+# Конфиги коллектора содержат подстановки ${env:...}, шаблон cloud-init —
+# переменные оболочки; их валидность проверяют сами инструменты
+# (коллектор при старте, render.sh), а не yamllint.
+ignore: |
+  infra/env.local/otel/config.yaml
+  infra/env.stage/otel/config.yaml
+  infra/env.prod/otel/config.yaml
+  infra/observability/otel-collector.yaml
+  infra/infra/cloud-init/vm.yaml.tmpl

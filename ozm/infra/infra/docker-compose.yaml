@@ -1,0 +1,478 @@
+# Шаблон скилла tnlife-miniapp-engineering: стек продукта для docker compose.
+# Норма — 01-corp-standard.md, «docker-compose и Dockerfile». Подставьте ozm везде,
+# где он встречается, и удалите сервисы, которых у продукта нет.
+#
+# Норма §2.2 корп. шаблона и проверки [4/15], [5/15], [10/15]:
+#   - имя сервиса = container_name = базовое имя образа;
+#   - у каждого сервиса есть deploy.resources.limits.{cpus,memory} и healthcheck;
+#   - плавающий тег «latest» ЗАПРЕЩЁН, версия образа фиксируется явно и до
+#     патч-версии: `16-alpine` и `v3.1` плывут внутри ветки и подменяются
+#     без MR (теги сверены с реестром docker.io);
+#   - прямые pull с публичных реестров на ВМ закрыты исходящим firewall'ом,
+#     поэтому хост реестра подставляется через ${DOCKER_PROXY_HOST_1}. Все
+#     образы стенда, кроме мока Цифрового профиля, лежат на docker.io — это
+#     дефолт переменной, и стенд поднимается на ноутбуке без прокси. Мок живёт
+#     на ghcr.io и адресуется отдельной переменной OIDC_MOCK_IMAGE (решение
+#     D8): путь docker.io/navikt/… даёт pull denied. На ВМ
+#     эксплуатация подставляет прокси в обе переменные — у прокси-реестра
+#     upstream-хост входит в путь (<прокси>/ghcr.io/navikt/…). Образы api и
+#     web собирает `make -C infra build` двумя наборами (шапка Dockerfile.backend);
+#   - Loki, Grafana и Prometheus как сервисы ЗАПРЕЩЕНЫ (§1.8), телеметрия — OTel.
+#
+# Каталог окружения — переменная ENV_DIR. Все env_file читают
+# ${ENV_DIR:-env.local}: по умолчанию это локальный стенд, на другом контуре
+# каталог подменяется значением ENV_DIR в ОКРУЖЕНИИ ПРОЦЕССА compose. Разница
+# существенная: `--env-file` раскрывает только ${…} внутри compose-файла, а
+# набор файлов, которые сервис получает через env_file, он не меняет —
+# передайте только --env-file, и контейнеры на stage поднимутся с окружением
+# env.local. Поэтому ENV_DIR и --env-file идут парой; обе половины пары уже
+# зашиты в цель up соседнего Makefile, поэтому руками их набирать не нужно:
+#   локально: make -C infra up
+#   контур:   make -C infra up ENV_DIR=env.stage
+# Тот же вызов «в ручном виде», если Makefile недоступен:
+#   ENV_DIR=env.stage OTEL_CONFIG_DIR=./env.stage/otel docker compose \
+#     -f docker-compose.yaml --env-file env.stage/.env.app … up -d
+# Каким шагом конвейера поставки выставляется ENV_DIR и раскладывается каталог
+# контура — REPLACE_WITH_ENV_DIR_PIPELINE_STEP: в источниках это не
+# зафиксировано, строка вынесена в «Открытые вопросы» templates/code/README.md.
+#
+# Сервисы стенда — обратный прокси, контейнер PostgreSQL, мок Цифрового профиля
+# и мок SMTP — закрыты профилем `local`. Вне профиля Compose их не создаёт,
+# поэтому на stage и prod они не поднимутся, даже если файл уехал туда
+# целиком: «только локальный стенд» держится механизмом, а не доброй волей.
+# PostgreSQL на контурах — managed (01 «Стек»), контейнера там быть не должно;
+# стенд и контуры разводятся профилями одного файла, а не двумя файлами.
+# У мока Цифрового профиля есть второй профиль `oidc-mock` — осознанный
+# выключатель для stage, пока ЦП не ответил (03-auth-profile.md §8).
+#
+# Порты на хост. Наружу смотрит только вход — на стенде это прокси :80/:443,
+# на контуре nginx. Порты БД, мока ЦП и мока SMTP привязаны к 127.0.0.1 и
+# живут только у сервисов профиля `local`; коллектор OTel на хост не
+# публикуется ни на одном контуре — приложение ходит к нему по имени в сети
+# compose (OTEL_EXPORTER_OTLP_ENDPOINT в env.example/.env.otel). 5432, 4317
+# или 4318, опубликованные на 0.0.0.0 без профиля, открылись бы и на stage/prod.
+# WEB_HOST_IP и WEB_HOST_PORT приходят ТОЛЬКО через --env-file (пара с ENV_DIR,
+# см. выше; в цели up они уже зашиты): значения из env_file сервиса Compose в
+# ports не подставляет. Без --env-file берутся дефолты 0.0.0.0:80, и на
+# локальном стенде web конфликтует с traefik по :80 — стек не поднимется.
+# Проверки:
+#   docker compose -f docker-compose.yaml config --services   — без профиля нет
+#     ни traefik, ни postgres, ни oidc, ни mailpit;
+#   docker compose -f docker-compose.yaml config | grep -c published   — 1 без
+#     профиля: РОВНО ОДИН порт, вход web на ${WEB_HOST_IP}:${WEB_HOST_PORT};
+#     с COMPOSE_PROFILES=local у каждого published стоит host_ip 127.0.0.1,
+#     кроме :80/:443 прокси; с COMPOSE_PROFILES=oidc-mock — 2 (web и мок ЦП
+#     на 127.0.0.1:5556). Ноль published без профиля — тоже дефект: у стека
+#     не остаётся входа.
+#
+# Локальный стенд поднимает `make -C infra up` (Makefile из этого же каталога
+# шаблонов): генерирует self-signed сертификат в env.local/traefik/certs,
+# передаёт все env.local/.env.* как --env-file и сам подставляет
+# COMPOSE_PROFILES=local. Приставка в команде не нужна; вне env.local цель
+# оставляет профиль пустым. Состав env.local описан в env.local/README.md.
+
+# Единая политика логирования (driver local + ротация) для сервисов без
+# собственной секции logging — иначе логи растут без ротации и забивают диск ВМ.
+x-logging: &default-logging
+  driver: local
+  options:
+    max-size: "20m"
+    max-file: "3"
+
+services:
+
+  # ── Reverse proxy — ТОЛЬКО локальный стенд (профиль local) ──────────────────
+  # Норма 01, раздел «Стек»: на входе nginx, Envoy в мини-аппах запрещён. Traefik здесь —
+  # локальный dev-прокси: TLS на *.localhost и маршруты по labels. На stage и
+  # prod вход даёт nginx, и этот сервис, его labels у соседей и каталог
+  # env.local/traefik туда не переносятся. За «не переносятся» отвечает
+  # `profiles: ["local"]` ниже, а не комментарий: без COMPOSE_PROFILES=local
+  # Compose этот сервис не создаёт. Проверки:
+  # `docker compose config --services` без профиля — traefik не печатается;
+  # `grep -rni traefik infra/env.stage infra/env.prod` — пусто.
+  # Допустимость traefik как локального прокси для аудита ИБ в норме не
+  # зафиксирована (01 нормирует только nginx и Envoy, и «только локально» для
+  # Envoy отступлением быть не перестаёт) — подтвердите у команды платформы до
+  # первого аудита; nginx и в env.local — допустимая замена.
+  ozm-traefik:
+    profiles: ["local"]
+    image: ${DOCKER_PROXY_HOST_1:-docker.io}/traefik:v3.1.7
+    container_name: ozm-traefik
+    logging: *default-logging
+    command:
+      - "--api.insecure=true"
+      - "--api.dashboard=true"
+      - "--ping=true"   # включает /ping, по которому ходит healthcheck
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.file.directory=/etc/traefik/dynamic"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+    ports:
+      - "80:80"
+      - "443:443"
+      # Панель traefik (8080 занят API приложения). api.insecure=true — панель
+      # без авторизации, поэтому только loopback.
+      - "127.0.0.1:8090:8080"
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+      # tls.yaml и certs/ (сертификат генерирует `make -C infra up`); traefik
+      # читает из каталога только .yml/.yaml/.toml, certs/ ему не мешает.
+      - "./env.local/traefik:/etc/traefik/dynamic:ro"
+    networks:
+      - ozm-net
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: "128M"
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  # ── Приложение ──────────────────────────────────────────────────────────────
+  ozm-api:
+    image: ${DOCKER_REGISTRY:-REPLACE_WITH_IMAGE_REGISTRY}/ozm-api:${IMAGE_TAG:-local}
+    container_name: ozm-api
+    # Каталог контура подставляет ENV_DIR (см. шапку файла); значение по
+    # умолчанию — локальный стенд.
+    env_file:
+      - ${ENV_DIR:-env.local}/.env.pg
+      - ${ENV_DIR:-env.local}/.env.smtp
+      - ${ENV_DIR:-env.local}/.env.oidc
+      - ${ENV_DIR:-env.local}/.env.otel
+      - ${ENV_DIR:-env.local}/.env.app
+    expose:
+      - "8080"   # HTTP_ADDR: /api/v1/*, /healthz, /readyz
+      # METRICS_ADDR (.env.app, :9090): /metrics только внутри сети compose —
+      # его скрейпит ozm-otel (receiver prometheus, otel-collector.yaml).
+      # Наружу порт не публикуется ни на одном контуре (решение D5, 08 §9).
+      # Проверка: `docker compose config` — 9090 есть в expose и нет в ports.
+      - "9090"
+    # Корневой сертификат managed PG для PGSSLMODE=verify-full (.env.pg,
+    # PGSSLROOTCERT=/etc/ssl/certs/pg-root.crt). Файл кладёт служба
+    # эксплуатации в env.<контур>/certs/pg-root.crt — он публичный и лежит в
+    # репозитории. Если .env.pg ссылается на файл, которого нет ни в образе,
+    # ни в томах, pgx падает в ParseConfig, а оператор, убравший строку,
+    # получает require — соединение без проверки сервера.
+    # Для env.local том закомментирован ВМЕСТЕ с PGSSLROOTCERT в .env.pg: БД в
+    # контейнере без TLS (PGSSLMODE=disable). На контуре раскомментируйте обе
+    # строки; цель up на контуре останавливается, если PGSSLROOTCERT задан, а
+    # файла нет или том всё ещё закомментирован.
+    # volumes:
+    #   - ${ENV_DIR:-env.local}/certs/pg-root.crt:/etc/ssl/certs/pg-root.crt:ro
+    # oidc.localhost должен резолвиться в хост-машину, где локальный прокси
+    # слушает :443: бэкенд валидирует claim iss по тому же URL, что видел браузер.
+    extra_hosts:
+      - "oidc.localhost:host-gateway"
+    networks:
+      - ozm-net
+    depends_on:
+      # required: false — postgres живёт в профиле `local`; без профиля (stage,
+      # prod, managed PostgreSQL) сервиса в модели нет, и без этого флага
+      # compose падает: «depends on undefined service». С флагом зависимость
+      # локально по-прежнему ждёт service_healthy, а на контуре молча снимается.
+      ozm-postgres:
+        condition: service_healthy
+        required: false
+      ozm-otel:
+        condition: service_started
+    labels:
+      - "traefik.enable=true"
+      # Прямой роутер оставлен для smoke-тестов и отладки curl'ом.
+      # SPA ходит в API через same-origin /api/ (nginx внутри ozm-web).
+      - "traefik.http.routers.ozm-api.rule=Host(`api.localhost`)"
+      - "traefik.http.routers.ozm-api.entrypoints=websecure"
+      - "traefik.http.routers.ozm-api.tls=true"
+      - "traefik.http.services.ozm-api.loadbalancer.server.port=8080"
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: "512M"
+    # Образ distroless — wget и curl внутри нет, пробу делает сам бинарь
+    # (флаг -healthcheck, см. backend/Dockerfile).
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/ozm-api", "-healthcheck"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    logging:
+      driver: local
+      options:
+        max-size: "50m"
+        max-file: "5"
+    restart: unless-stopped
+
+  ozm-web:
+    image: ${DOCKER_REGISTRY:-REPLACE_WITH_IMAGE_REGISTRY}/ozm-web:${IMAGE_TAG:-local}
+    container_name: ozm-web
+    # Доверенная сеть прокси для realip (X-Forwarded-For → client_ip в логе и
+    # X-Real-IP для rate-limit бэкенда): локально — сеть compose, где живёт
+    # traefik; на контуре — сеть балансировщика, REPLACE_WITH_LB_CIDR. Дом
+    # переменной — env.<контур>/.env.app (блок «Доверенный прокси» в
+    # env.example/.env.app), и она ОБЯЗАТЕЛЬНА на всех контурах; сюда значение
+    # приходит через --env-file, дальше — в realip.conf при старте контейнера
+    # (Dockerfile.frontend, realip.conf.template). Дефолт — «никому не верить»:
+    # без переменной клиентским адресом остаётся адрес прокси, подмена
+    # невозможна, но и rate-limit входа сидит на одном ключе — адресе
+    # балансировщика, поэтому вне local переменную задают всегда (обязательность
+    # проверяет tests/check-env.sh). Плейсхолдер, доехавший до контейнера,
+    # роняет `nginx -t` на старте — громко, а не молча. Доверие всем
+    # RFC1918-сетям ЗАПРЕЩЕНО: X-Forwarded-For подставит любой узел
+    # корпоративной сети; адрес в логе берётся ПОСЛЕ подмены, иначе там всегда
+    # балансировщик.
+    # Дефолт остаётся значением, а не ${…:?…}: иначе `docker compose config`
+    # без --env-file (проверки приёмки [4/15], [10/15]) падал бы вместо вывода.
+    environment:
+      TRUSTED_PROXY_CIDR: ${TRUSTED_PROXY_CIDR:-127.0.0.1/32}
+    networks:
+      - ozm-net
+    # service_started, а не service_healthy: nginx поднимается независимо и сам
+    # отдаёт 502 на /api, пока бэкенд не готов — иначе фронт заложник пробы API.
+    depends_on:
+      ozm-api:
+        condition: service_started
+    # Единственный порт стека, опубликованный на хост без профиля: это вход
+    # stage и prod (за балансировщиком, TLS терминируется на нём — readme-deploy
+    # §1.3). Значения — из env.<контур>/.env.app: на локальном стенде
+    # 127.0.0.1:8088, чтобы не столкнуться с traefik на :80/:443 и не смотреть
+    # наружу; на контурах 0.0.0.0:80.
+    ports:
+      - "${WEB_HOST_IP:-0.0.0.0}:${WEB_HOST_PORT:-80}:8080"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.ozm-web.rule=Host(`app.localhost`)"
+      - "traefik.http.routers.ozm-web.entrypoints=websecure"
+      - "traefik.http.routers.ozm-web.tls=true"
+      # 8080, а не 80: nginx работает под непривилегированным пользователем
+      # и порт ниже 1024 забиндить не может (см. nginx.conf).
+      - "traefik.http.services.ozm-web.loadbalancer.server.port=8080"
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: "128M"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging: *default-logging
+    restart: unless-stopped
+
+  # ── Инфраструктура и моки ───────────────────────────────────────────────────
+  # PostgreSQL в контейнере — ТОЛЬКО локальный стенд. На stage и prod БД
+  # managed (01 «Стек», SSL по умолчанию), приложение идёт к ней по PG* из
+  # env.<контур>/.env.pg, и контейнера с базой на ВМ быть не должно. Профиль
+  # `local` держит это механизмом: без него сервис в модели отсутствует.
+  # У ozm-api зависимость на него помечена required: false — см. там.
+  ozm-postgres:
+    profiles: ["local"]
+    image: ${DOCKER_PROXY_HOST_1:-docker.io}/postgres:16.15-alpine
+    container_name: ozm-postgres
+    logging: *default-logging
+    env_file:
+      - ${ENV_DIR:-env.local}/.env.pg
+    # ${PG_MIGRATE_USER}, ${PG_MIGRATE_PASSWORD} и ${PGDATABASE} Compose
+    # раскрывает из окружения запускающей оболочки или из --env-file, а НЕ из
+    # env_file этого сервиса. Поднимайте стенд с `--env-file env.local/.env.pg`
+    # (по одному на каждый .env.*; цель up делает это сама): иначе initdb
+    # заведёт базу со значением после «:-», приложение придёт с паролем из
+    # файла, и вы получите password authentication failed на ровном месте.
+    # Значение после «:-» и значение в .env.pg держите равными.
+    #
+    # Две роли (решение D3). POSTGRES_USER контейнера — роль-
+    # владелец схемы: под ней раннер миграций создаёт таблицы и триггеры
+    # (PG_MIGRATE_USER/PG_MIGRATE_PASSWORD в .env.pg). Роль рантайма
+    # PGUSER/PGPASSWORD — DML без DDL — создаёт init-roles.sql при первом
+    # создании тома; она не владеет audit_log и снять триггер deny_mutation не
+    # может. На контурах вторую роль заводит managed-кластер (заявка в
+    # эксплуатацию), check-env.sh требует там PG_MIGRATE_USER ≠ PGUSER.
+    environment:
+      POSTGRES_USER: ${PG_MIGRATE_USER:-ozm_migrate}
+      POSTGRES_PASSWORD: ${PG_MIGRATE_PASSWORD:-REPLACE_WITH_LOCAL_PG_MIGRATE_PASSWORD}
+      POSTGRES_DB: ${PGDATABASE:-ozm}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      # init-roles.sql: роль рантайма и её права; init.sql: расширения из
+      # конфигурации managed-кластера, БЕЗ схемы (её ведут миграции).
+      # Исполняются один раз при создании тома; изменили — `make -C infra
+      # reset-data CONFIRM=yes` (обычный `down` тома не трогает), затем `up`.
+      - ./env.local/postgres:/docker-entrypoint-initdb.d:ro
+    networks:
+      - ozm-net
+    # Только loopback: порт нужен psql и IDE с рабочей машины, а не сети
+    # вокруг ноутбука. Healthcheck ниже ходит внутрь контейнера и от
+    # публикации не зависит.
+    ports:
+      - "127.0.0.1:5432:5432"
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: "512M"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PGUSER:-ozm} -d ${PGDATABASE:-ozm}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  # Мок провайдера OIDC — вход на стенде, пока клиента у Цифрового профиля нет.
+  # Выдаёт токены с claim portal_code, поэтому S0 идёт с реальными ролями, а не
+  # с заглушкой в коде. Переменные входа — блок «Локальный стенд» в
+  # env.example/.env.oidc: issuer один и тот же для браузера и для бэкенда.
+  #
+  # Профилей два, и это не описка. `local` поднимает мок вместе с остальным
+  # стендом. `oidc-mock` — отдельный выключатель для stage, пока ЦП не ответил
+  # (03-auth-profile.md §8, go-live-auth.md §3 разрешают там тот же мок): такой
+  # запуск делается осознанно, `COMPOSE_PROFILES=oidc-mock` виден в команде и в
+  # конвейере, а `grep -rn oidc-mock` находит все места, откуда его снимать.
+  # На prod мок ЗАПРЕЩЁН: профиль там не включается никогда. При переключении на
+  # боевой вход мок снимается вместе с OIDC_TOKEN_SIGNATURE_UNVERIFIED — одним
+  # шагом.
+  #
+  # Образ мока лежит на ghcr.io, а не на docker.io, поэтому адресуется своей
+  # переменной, а не ${DOCKER_PROXY_HOST_1} (решение D8): подстановка
+  # docker.io/navikt/… даёт pull denied на ноутбуке. Дефолт — прямой ghcr.io
+  # для стенда. Под профилем oidc-mock на stage прямые pull закрыты (§2.1) —
+  # задайте в окружении запуска OIDC_MOCK_IMAGE=<прокси>/ghcr.io/navikt/mock-oauth2-server:2.1.10.
+  ozm-oidc:
+    profiles: ["local", "oidc-mock"]
+    image: ${OIDC_MOCK_IMAGE:-ghcr.io/navikt/mock-oauth2-server:2.1.10}
+    container_name: ozm-oidc
+    logging: *default-logging
+    environment:
+      SERVER_PORT: "5556"
+      JSON_CONFIG_PATH: /etc/oidc/config.json
+      # Статический issuer: один и тот же URL для браузера (через прокси)
+      # и для бэкенда (extra_hosts → host-gateway → прокси).
+      ISSUER_URL: https://oidc.localhost/default
+    volumes:
+      # config.json: тестовые пользователи с claim portal_code — коды ролей
+      # подставьте из RBAC продукта вместо REPLACE_WITH_PORTAL_CODE_*.
+      - ./env.local/oidc:/etc/oidc:ro
+    networks:
+      - ozm-net
+    # Только loopback. Браузер и бэкенд ходят к моку через прокси
+    # (https://oidc.localhost), прямой порт нужен smoke-проверке
+    # tests/run.sh (`localhost:5556/default/.well-known/...`) и curl'у с
+    # рабочей машины. Под профилем `oidc-mock` на stage он тоже остаётся на
+    # loopback ВМ — наружу не виден. Healthcheck от публикации не зависит.
+    ports:
+      - "127.0.0.1:5556:5556"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.ozm-oidc.rule=Host(`oidc.localhost`)"
+      - "traefik.http.routers.ozm-oidc.entrypoints=websecure"
+      - "traefik.http.routers.ozm-oidc.tls=true"
+      - "traefik.http.services.ozm-oidc.loadbalancer.server.port=5556"
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: "256M"
+    healthcheck:
+      # Образ мока — distroless-java: ни shell, ни wget или curl внутри нет,
+      # HTTP-пробу изнутри выполнить нечем. Проверяем живость процесса его же
+      # JVM. Реальную готовность провайдера подтверждает /readyz приложения:
+      # он делает OIDC discovery (принцип «проверяй эффект, а не статус»).
+      test: ["CMD", "java", "-version"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+
+  ozm-otel:
+    image: ${DOCKER_PROXY_HOST_1:-docker.io}/otel/opentelemetry-collector-contrib:0.111.0
+    container_name: ozm-otel
+    logging: *default-logging
+    # Переменные форварда наружу (OTLP_ENDPOINT, OTLP_AUTHORIZATION,
+    # OTLP_INSECURE) принадлежат коллектору: config.yaml раскрывает их через
+    # ${env:…}. Без env_file они раскрываются в дефолты внутри контейнера —
+    # форвард на контуре молча бьёт в localhost:4317, healthcheck остаётся
+    # зелёным, alerts.yaml метрик не видит. Проверка:
+    # `docker compose config` показывает OTLP_ENDPOINT в environment сервиса.
+    env_file:
+      - ${ENV_DIR:-env.local}/.env.otel
+    command: ["--config=/etc/otel/config.yaml"]
+    volumes:
+      # Конфиг на окружение: local экспортирует только в debug, stage и prod
+      # подменяют каталог через OTEL_CONFIG_DIR и включают форвард наружу.
+      # env.stage/otel и env.prod/otel раскладывает `make -C infra otel-sync`
+      # из observability/otel-collector.yaml; env.local/otel правится руками и
+      # отличается от исходного конфига ровно экспортёрами и OTLP_INSECURE (08 §2).
+      - ${OTEL_CONFIG_DIR:-./env.local/otel}:/etc/otel:ro
+    networks:
+      - ozm-net
+    # Портов на хост НЕТ, и это на всех контурах: приложение шлёт OTLP по имени
+    # сервиса в сети compose (OTEL_EXPORTER_OTLP_ENDPOINT=http://ozm-otel:4317
+    # в env.example/.env.otel), а форвард наружу — исходящее соединение самого
+    # коллектора. 4317 и 4318, опубликованные на 0.0.0.0 без профиля, —
+    # открытый приёмник телеметрии на боевой ВМ. Локально телеметрию смотрят в
+    # `docker compose logs ozm-otel` (экспортёр debug); health-порт 13133
+    # наружу тоже не выводится — живость коллектора видна в `docker compose ps`.
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: "256M"
+    healthcheck:
+      # Коллектор тоже distroless: HTTP-пробы изнутри нет. Проверяем, что
+      # бинарь жив; приём телеметрии виден по метрикам экспорта приложения.
+      # Поэтому зависимые сервисы ждут service_started, а не service_healthy.
+      test: ["CMD", "/otelcol-contrib", "--version"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+
+  # Мок SMTP — только локальный стенд (профиль local) и только если продукт
+  # шлёт письма.
+  ozm-mailpit:
+    profiles: ["local"]
+    image: ${DOCKER_PROXY_HOST_1:-docker.io}/axllent/mailpit:v1.21.8
+    container_name: ozm-mailpit
+    logging: *default-logging
+    environment:
+      MP_SMTP_BIND_ADDR: "0.0.0.0:2525"
+      MP_SMTP_AUTH_ACCEPT_ANY: "1"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "1"
+    networks:
+      - ozm-net
+    # Только loopback: мок принимает любую аутентификацию (ACCEPT_ANY), в сеть
+    # вокруг ноутбука такой SMTP выставлять незачем.
+    ports:
+      - "127.0.0.1:2525:2525"   # SMTP (§1.2 корп. шаблона: SMTP_PORT=2525)
+      - "127.0.0.1:8025:8025"   # веб-интерфейс
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: "128M"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8025/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+networks:
+  ozm-net:
+    driver: bridge
+
+volumes:
+  postgres-data:

@@ -1,0 +1,30 @@
+# Шаблон скилла tnlife-miniapp-engineering: динамическая конфигурация traefik
+# для локального стенда — TLS для *.localhost на self-signed сертификате.
+# Подставлять нечего.
+#
+# КУДА КЛАСТЬ: infra/env.local/traefik/tls.yaml. ТОЛЬКО env.local: на stage и
+# prod вход даёт nginx (01, раздел «Стек»), traefik и этот каталог туда не переносятся.
+# Проверка: `grep -rni traefik infra/env.stage infra/env.prod` — пусто.
+#
+# Маршруты (Host(`app.localhost`) → ozm-web, Host(`api.localhost`) →
+# ozm-api, Host(`oidc.localhost`) → мок) traefik берёт из labels сервисов
+# в docker-compose.yaml (providers.docker); здесь — только TLS.
+#
+# Каталог смонтирован целиком в /etc/traefik/dynamic (providers.file.directory).
+# Из него traefik читает только файлы .yml, .yaml и .toml, поэтому сертификаты
+# в подкаталоге certs/ ему не мешают, и отдельный том /certs через overlay,
+# отдельным файлом не нужен: одним файлом меньше.
+#
+# local.crt и local.key генерирует `make -C infra up` при первом запуске
+# (openssl, SAN localhost и *.localhost, 825 дней). Приватных ключей в
+# репозитории нет — оба файла в .gitignore репозитория Infra.
+
+tls:
+  certificates:
+    - certFile: /etc/traefik/dynamic/certs/local.crt
+      keyFile: /etc/traefik/dynamic/certs/local.key
+  stores:
+    default:
+      defaultCertificate:
+        certFile: /etc/traefik/dynamic/certs/local.crt
+        keyFile: /etc/traefik/dynamic/certs/local.key

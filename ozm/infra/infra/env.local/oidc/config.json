@@ -1,0 +1,41 @@
+{
+  "interactiveLogin": false,
+  "tokenCallbacks": [
+    {
+      "issuerId": "default",
+      "tokenExpiry": 3600,
+      "requestMappings": [
+        {
+          "requestParam": "login_hint",
+          "match": "REPLACE_WITH_PORTAL_CODE_1",
+          "claims": {
+            "sub": "test-user-1",
+            "portal_code": "REPLACE_WITH_PORTAL_CODE_1",
+            "name": "Тестов Пользователь Первый",
+            "email": "test.user1@tn.example"
+          }
+        },
+        {
+          "requestParam": "login_hint",
+          "match": "REPLACE_WITH_PORTAL_CODE_2",
+          "claims": {
+            "sub": "test-user-2",
+            "portal_code": "REPLACE_WITH_PORTAL_CODE_2",
+            "name": "Тестов Пользователь Второй",
+            "email": "test.user2@tn.example"
+          }
+        },
+        {
+          "requestParam": "client_id",
+          "match": "*",
+          "claims": {
+            "sub": "test-user-default",
+            "portal_code": "REPLACE_WITH_PORTAL_CODE_DEFAULT",
+            "name": "Тестов Пользователь По Умолчанию",
+            "email": "test.default@tn.example"
+          }
+        }
+      ]
+    }
+  ]
+}

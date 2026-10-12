@@ -1,0 +1,24 @@
+---
+# Шаблон скилла tnlife-miniapp-engineering: конфиг markdownlint.
+# Подставлять нечего.
+#
+# КУДА КЛАСТЬ: корень репозитория под именем .markdownlint.yaml — С ТОЧКОЙ.
+# Его читает хук markdownlint из pre-commit-config.yaml
+# (args: --config .markdownlint.yaml). Область — docs/, ADR, README.
+
+default: true
+
+# MD013: длина строки — 160, таблицы и блоки кода не считаем: таблицы нормы
+# («правило → почему → как проверить») в 80 символов не укладываются.
+MD013:
+  line_length: 160
+  tables: false
+  code_blocks: false
+
+# MD033: inline HTML — только сворачиваемые блоки и перенос строки в таблицах.
+MD033:
+  allowed_elements: ["details", "summary", "br"]
+
+# MD041: первая строка — заголовок. Не требуем: шаблоны начинаются с
+# комментария-шапки «из чего сделан и что подставить».
+MD041: false

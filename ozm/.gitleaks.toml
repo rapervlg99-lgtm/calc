@@ -1,0 +1,45 @@
+# Шаблон скилла tnlife-miniapp-engineering: конфиг gitleaks.
+# Подставьте ozm в title;
+# каждое новое исключение — с owner, reason и expires.
+#
+# КУДА КЛАСТЬ: корень репозитория под именем .gitleaks.toml — С ТОЧКОЙ.
+# Его читают хук gitleaks из pre-commit-config.yaml (args: --config
+# .gitleaks.toml) и job secrets в security.yaml (GITLEAKS_CONFIG).
+#
+# Правило allowlist (01 «Секреты», проверка [8/15]): запись без owner, reason
+# и даты истечения на ревью не принимается. Единственное бессрочное
+# исключение — плейсхолдеры REPLACE_WITH_*: это и есть норма файлов stage и
+# prod, подчёркивания в них обязательны, чтобы эвристика секретов
+# ([A-Za-z0-9+/]{16,}) их не ловила.
+#
+# Чего здесь НЕТ, в отличие от типового конфига: путей infra/env.stage и infra/env.prod
+# в allowlist. Их содержимое — только плейсхолдеры, и они уже покрыты regex;
+# реальный секрет, попавший в эти файлы, gitleaks обязан поймать — это второй
+# рубеж после проверки [8/15].
+#
+# Проверка конфига локально (из корня репозитория):
+#   gitleaks detect --no-git --source . --config .gitleaks.toml --redact
+# Ожидание: плейсхолдер REPLACE_WITH_PG_PASSWORD не находка; строка вида
+# glpat-<20 символов> — находка.
+
+title = "ozm gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Плейсхолдеры нормы и сам конфиг (в нём лежат фрагменты regex)"
+paths = [
+  '''\.gitleaks\.toml$''',
+]
+regexes = [
+  # owner: норма 01 «Секреты» / проверка [8/15]; reason: плейсхолдеры,
+  # которые подставляет служба эксплуатации при деплое; expires: бессрочно —
+  # пока действует проверка [8/15]
+  '''REPLACE_WITH_[A-Z0-9_]+''',
+
+  # Значения локального стенда, которые не секреты (пароль БД в контейнере,
+  # секрет сессии dev-сборки), — по одной строке на значение, с обоснованием:
+  # owner: REPLACE_WITH_OWNER_TEAM; reason: local dev only; expires: REPLACE_WITH_DATE
+  # '''ozm_dev_pw''',
+]

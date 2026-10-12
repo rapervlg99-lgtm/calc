@@ -1,0 +1,15 @@
+# Шаблон скилла tnlife-miniapp-engineering: конфиг codespell.
+# Подставлять нечего; каталоги в skip
+# сверьте со своей раскладкой.
+#
+# КУДА КЛАСТЬ: корень репозитория под именем .codespellrc — С ТОЧКОЙ.
+# Его читает хук codespell из pre-commit-config.yaml (файл подхватывается из
+# текущего каталога без аргументов).
+#
+# skip: вендоренные uikit и tn-bridge (чужой код), lock-файлы, docs/source
+# (исходные постановки как есть), бинарные форматы.
+# ignore-words-list: сокращения, которые codespell принимает за опечатки.
+[codespell]
+skip = .git,*.sum,*.lock,node_modules,vendor,*.min.js,uikit,tn-bridge,docs/source,*.docx,*.xlsx,*.pdf
+ignore-words-list = nd,ot,te
+quiet-level = 3

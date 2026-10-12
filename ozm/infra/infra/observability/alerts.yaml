@@ -1,0 +1,205 @@
+# Шаблон скилла tnlife-miniapp-engineering: правила алертинга продукта.
+# Норма — 08-observability.md §6. Подставьте ozm —
+# имя сервиса; оно же значение лейбла job и имя группы правил.
+#
+# Профиль А (OTel-only): метрики уходят из приложения в OTel Collector и дальше во
+# внешнюю систему мониторинга ТН — эти правила загружаются ТАМ, локального
+# Prometheus у продукта нет (§1.8 запрещает Loki, Grafana и Prometheus как сервисы).
+#
+# Соглашение о серьёзности: critical будит дежурного, warning идёт в чат
+# эксплуатации, info живёт только на дашборде.
+#
+# ДВА РАЗНЫХ ЛЕЙБЛА С ОДНИМ ИМЕНЕМ job, и это не опечатка:
+#   - job="ozm" в правилах HTTP и процесса — лейбл СКРЕЙПА, его ставит
+#     receiver prometheus коллектора (job_name в otel-collector.yaml);
+#   - job="pdn_purge" в правилах фоновых задач — СВОЙ лейбл серии, имя воркера
+#     (08 §4 и §5, канон набора). Селектор по name вместо job матчит ноль
+#     серий: код всегда выставляет именно job.
+# Поэтому в правилах фоновых задач селектора job="ozm" НЕТ: он означал бы
+# воркер по имени сервиса. Разделение серий держит префикс имени метрики
+# (ozm_job_…), а не лейбл, а honor_labels: true в скрейп-конфиге не даёт
+# переписать свой job серии в exported_job (комментарий в otel-collector.yaml).
+#
+# Имена метрик — контракт с пакетом internal/metrics: любое переименование там
+# обязано приехать сюда. Стандартный набор (http_requests_total,
+# http_request_duration_seconds) идёт БЕЗ префикса, доменные и служебные метрики
+# продукта — с префиксом ozm_ (08 §4).
+#
+# ОБЯЗАТЕЛЬНАЯ сверка имён перед тем, как отдать правила платформенной команде.
+# Алерт, который не матчит ни одной серии, молчит и выглядит здоровым.
+# Типовой отказ: правила написаны на непрефиксованные имена, а код
+# регистрирует префиксованные (или лейбл воркера в коде назван иначе) — и
+# правило, в том числе критичное про удаление ПДн, молчит. Прогоните:
+#   grep -oE '[a-z_]+_(total|seconds|timestamp)[a-z_]*' alerts.yaml | sort -u
+#   grep -rhoE 'Name: *"[<>a-z_]+"' backend/cmd backend/internal | sort -u
+#   promtool check rules alerts.yaml   # синтаксис, не имена; только после подстановки
+# Списки обязаны совпасть, иначе правило мёртвое. Метрики фоновых задач и почты
+# регистрирует internal/metrics — пакет появляется вместе с первым воркером;
+# до этого JobStale, JobFailures, PdnPurgeStale и MailSendFailures серий не
+# имеют по построению, и это ожидаемо, а не дефект правил.
+groups:
+  - name: ozm
+    rules:
+      # up{job} даёт receiver prometheus коллектора (otel-collector.yaml):
+      # job_name там равен ozm, цель — ozm-api:9090 внутри сети
+      # compose (решение D5). Переименовали job_name — правьте и здесь.
+      - alert: BackendDown
+        expr: up{job="ozm"} == 0
+        for: 1m
+        labels: { severity: critical }
+        annotations:
+          summary: "ozm недоступен"
+          description: "Нет успешного сбора метрик с ozm в течение 1 минуты."
+
+      - alert: HighErrorRate5xx
+        expr: >
+          sum(rate(http_requests_total{job="ozm",status=~"5.."}[5m]))
+          / sum(rate(http_requests_total{job="ozm"}[5m])) > 0.01
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: "Доля 5xx выше 1%"
+          description: "Более 1% запросов завершается ошибкой 5xx на интервале 5 минут."
+
+      - alert: ElevatedRouteLatency
+        expr: >
+          histogram_quantile(0.95,
+            sum by (le, route) (rate(http_request_duration_seconds_bucket{job="ozm"}[5m]))) > 3
+        for: 15m
+        labels: { severity: warning }
+        annotations:
+          summary: "p95 маршрута выше 3 секунд"
+          description: "95-й перцентиль {{ $labels.route }} превышает 3 секунды 15 минут подряд."
+
+      - alert: BackendRestartLoop
+        expr: changes(process_start_time_seconds{job="ozm"}[15m]) > 3
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: "ozm перезапускается по кругу"
+          description: "Более 3 рестартов за 15 минут — вероятна грязная миграция или паника на старте."
+
+      - alert: AuthFailuresSpike
+        expr: sum(rate(http_requests_total{job="ozm",status="401"}[5m])) > 5
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "Всплеск 401"
+          description: "Более 5 отказов аутентификации в секунду 5 минут подряд — подбор учётных данных или сломанный клиент."
+
+      - alert: HighRateLimitRejections
+        expr: sum(rate(http_requests_total{job="ozm",status="429"}[10m])) > 1
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "Устойчивые отказы по rate-limit"
+          description: "Более 1 отказа 429 в секунду 10 минут подряд."
+
+      # ── Фоновые задачи: метрика «давно ли был успех» ────────────────────────
+      # У фоновой задачи нет пользователя, который заметит отказ, поэтому каждый
+      # воркер обязан выставлять ozm_job_last_success_timestamp_seconds{job}
+      # (08 §5); job — имя воркера, см. шапку файла.
+      - alert: JobStale
+        expr: (time() - ozm_job_last_success_timestamp_seconds) > 90000
+        for: 15m
+        labels: { severity: critical }
+        annotations:
+          summary: "Фоновая задача {{ $labels.job }} давно не отрабатывала"
+          description: >
+            Последний успешный прогон был более 25 часов назад. Перечислите здесь,
+            что стоит за фоновыми задачами ozm: <какие процессы встанут>.
+
+      - alert: JobFailures
+        expr: sum by (job) (rate(ozm_job_runs_total{status="error"}[30m])) > 0
+        for: 30m
+        labels: { severity: warning }
+        annotations:
+          summary: "Фоновая задача {{ $labels.job }} падает"
+          description: "Прогоны задачи завершаются ошибкой на интервале 30 минут."
+
+      # ── ПДн: удаление по TTL обязано идти (152-ФЗ) ─────────────────────────
+      # job="pdn_purge" — имя воркера в коде (константа JobPdnPurge в
+      # scheduler/pdn_purge.go); если у вас оно другое, поправьте здесь.
+      - alert: PdnPurgeStale
+        expr: (time() - ozm_job_last_success_timestamp_seconds{job="pdn_purge"}) > 172800
+        for: 30m
+        labels: { severity: critical }
+        annotations:
+          summary: "Удаление ПДн по TTL не отрабатывает"
+          description: >
+            Задача pdn_purge не завершалась успешно более 48 часов. Персональные
+            данные в терминальных статусах хранятся дольше согласованного срока.
+
+      # ── Процесс: место для доменного алерта ────────────────────────────────
+      # Один алерт на главный процессный затык продукта. Пример: заявки
+      # с истёкшим SLA согласующего, ozm_requests_overdue > 20 за час.
+      # Замените имя, метрику, порог и текст на свои; метрика обязана быть
+      # заведена в internal/metrics, иначе правило никогда не сработает.
+      #
+      # Заготовка намеренно закомментирована: с угловыми скобками в expr файл
+      # не проходит promtool check rules, а он прогоняется по всему файлу и
+      # роняет проверку целиком — вместе с остальными правилами файла.
+      # Раскомментируйте и подставьте свои имена, скобок <> остаться не должно.
+      # - alert: <ИМЯ ДОМЕННОГО АЛЕРТА>
+      #   expr: <метрика процесса>{job="ozm"} > <порог>
+      #   for: 1h
+      #   labels: { severity: warning }
+      #   annotations:
+      #     summary: "<что случилось, одной строкой>"
+      #     description: >
+      #       <что это значит для процесса и что делать дежурному>
+
+      # ── Токен Цифрового профиля принят без проверки подписи ────────────────
+      # Метрику ozm_auth_profile_token_unverified_total регистрирует
+      # newMetrics() в backend/cmd/ozm-api/main.go, инкремент приходит из
+      # VerifierConfig.UnverifiedObserver (backend/internal/auth/auth_verify.go,
+      # 03 §3). На prod режим OIDC_TOKEN_SIGNATURE_UNVERIFIED не стартует
+      # вовсе, на stage допустим временно — поэтому любой ненулевой прирост
+      # здесь означает либо stage с открытой заявкой в ЦП, либо prod, собранный
+      # не по норме. Правило — пара к требованию auth_verify.go (комментарий
+      # к unverifiedParses: сервис заводит алерт на рост счётчика): без алерта
+      # метрика непроверенных разборов никого не будит.
+      - alert: TokenSignatureUnverified
+        expr: increase(ozm_auth_profile_token_unverified_total{job="ozm"}[10m]) > 0
+        for: 0m
+        labels: { severity: critical }
+        annotations:
+          summary: "Токен Цифрового профиля разбирается без проверки подписи"
+          description: >
+            За 10 минут выросло число разборов токена ЦП без проверки подписи
+            (OIDC_TOKEN_SIGNATURE_UNVERIFIED). На prod этого не может быть по
+            построению; на stage допустимо только на срок открытой заявки в
+            Цифровой профиль — см. 03-auth-profile.md §3.
+
+      # ── Почта: уведомления и дайджест (если продукт шлёт письма) ───────────
+      - alert: MailSendFailures
+        expr: sum(rate(ozm_mail_failed_total[10m])) > 0.1
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "Письма не уходят"
+          description: "Отправка уведомлений через корп. SMTP завершается ошибкой."
+
+      # ЦЕЛИ postgres В ПОСТАВЛЯЕМОМ СКРЕЙПЕ НЕТ: otel-collector.yaml объявляет
+      # один job — сам сервис (ozm-api:9090). Пока имя цели не подставлено,
+      # правило матчит ноль серий, поэтому лейбл оставлен плейсхолдером, а не
+      # правдоподобным «postgres»: незаполненный REPLACE_WITH_* видно, мёртвое
+      # правило — нет. Чем заполнять (одно из трёх, по решению эксплуатации):
+      #   - job_name экспортёра managed PostgreSQL во внешней системе ТН;
+      #   - job_name, добавленный в otel-collector.yaml (receiver postgresql
+      #     требует своих учётных данных к managed-кластеру — их в наборе нет);
+      #   - если экспортёра не будет, правило заменяется на контроль /readyz:
+      #     sum(rate(http_requests_total{job="ozm",route="/readyz",status!="200"}[5m])) > 0
+      #     (серия существует: /readyz проходит через accessLog с метриками).
+      # ОТКРЫТЫЙ ВОПРОС: REPLACE_WITH_PG_SCRAPE_JOB — имя цели скрейпа managed
+      # PostgreSQL контура; владелец значения — служба эксплуатации, в
+      # источниках набора его нет.
+      - alert: PostgresUnreachable
+        expr: up{job="REPLACE_WITH_PG_SCRAPE_JOB"} == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: "PostgreSQL недоступен"
+          description: >
+            Цель REPLACE_WITH_PG_SCRAPE_JOB не отвечает 2 минуты. Если экспортёр
+            postgres не развёрнут, контролируйте вместо этого /readyz приложения.

@@ -1,0 +1,222 @@
+# Шаблон скилла tnlife-miniapp-engineering: workflow tests.yaml.
+# Норма — 01-corp-standard.md, «CI: workflow по шаблону», и фрагмент «Подключение
+# в CI» (scripts/README.md). Подставьте ozm.
+#
+# КУДА КЛАСТЬ: .github/workflows/tests.yaml — рядом с build.yaml,
+# service-contour.yaml (оба из templates/code/ci/) и security.yaml (состав §3
+# корп. шаблона). Синтаксис — GitHub Actions, его проверяет actionlint.
+#
+# СОСТАВ (01 «CI», 10-testing-release.md): проверки соответствия в режиме
+# --strict (SKIP и Dockerfile вне списка — FAIL; порог PASS=15 FAIL=0 SKIP=0
+# держится кодом возврата job, а не чтением сводки), гейт зеркала контракта
+# (openapi-gate.sh ci), файлы окружения по контурам (check-env.sh), pre-commit,
+# тесты Go с -race (в том числе migrate_test.go на testcontainers — Docker на
+# раннере есть), тесты и сборка фронта, дым по поднятому стенду — только на
+# main: стенд собирается набором local (docker.io без прокси) той же целью
+# `make -C infra build`, поднимается `make -C infra up` и гасится
+# `reset-data CONFIRM=yes`.
+#
+# ПОЛИРЕПО. Файл написан под ОДИН чекаут — монорепо или общий рабочий каталог.
+# В нормативной раскладке (субгруппа mini-apps, четыре репозитория) run.sh
+# читает infra/, backend/ и docs/api/, а проверка [14/15] сравнивает файл из
+# Backend с файлом из Docs — одного чекаута мало: перед шагами проверок
+# добавляется чекаут соседних репозиториев, REPLACE_WITH_CROSS_REPO_CHECKOUT_STEP
+# (открытый вопрос 01 «Раскладка»). До ответа CI отдельного репозитория
+# запускает то, что читает только его собственные пути.
+#
+# КИТ ИЗ РЕЕСТРА. Шаги фронта ставят зависимости из корпоративного npm-реестра
+# (норма 01 «Стек»): нужен .npmrc фронта и токен в переменной окружения — каким
+# шагом конвейера они раскладываются, REPLACE_WITH_NPM_TOKEN_PIPELINE_STEP
+# (открытый вопрос templates/code/README.md). При ките, вендоренном по ADR,
+# ни файла, ни токена не нужно.
+#
+# Ревизии actions — ТОЧНЫЕ теги, те же, что в security.yaml (checkout v4.4.0,
+# setup-go v5.6.0, setup-node v4.4.0; таблица и SHA там). Новый здесь один:
+# | uses                  | тег    | commit SHA (git ls-remote)               |
+# |-----------------------|--------|------------------------------------------|
+# | actions/setup-python  | v7.0.0 | 5fda3b95a4ea91299a34e894583c3862153e4b97 |
+# При первом прогоне переведите uses: на SHA. Раннер — ubuntu-24.04 во всех
+# четырёх workflow, как в §4.3.
+#
+# Как проверить: python3 -c "import yaml; yaml.safe_load(open('.github/workflows/tests.yaml'))";
+# actionlint .github/workflows/tests.yaml; те же команды локально —
+# `make -C infra test` (compliance, smoke, check-env) и `make -C infra lint`.
+
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compliance:
+    name: Compliance (strict), контракт, окружения
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.4.0  # pin: v4.4.0 → зафиксировать SHA при первом прогоне: git ls-remote
+
+      # Только для четырёхрепозиторной раскладки: чекаут соседних репозиториев
+      # в общий рабочий каталог — REPLACE_WITH_CROSS_REPO_CHECKOUT_STEP.
+
+      - name: Set up Python
+        uses: actions/setup-python@v7.0.0  # pin: v7.0.0 → зафиксировать SHA при первом прогоне: git ls-remote
+        with:
+          python-version: "3.12"
+
+      - name: Разбор YAML для проверок compose
+        run: pip install pyyaml
+
+      # --strict: SKIP и Dockerfile вне списка — FAIL. Порог PASS=15 FAIL=0 SKIP=0
+      # держится кодом возврата job, а не чтением сводки.
+      - name: Проверки соответствия (порог CI)
+        run: bash infra/tests/run.sh compliance --strict
+
+      # Режим ci раскладывает зеркала и требует чистого рабочего дерева:
+      # правку источника без генерации ловит и печатает забытые пути.
+      - name: Гейт зеркала контракта
+        run: bash infra/tests/openapi-gate.sh ci
+
+      - name: Файлы окружения по контурам
+        run: bash infra/tests/check-env.sh
+
+  lint:
+    name: Lint (pre-commit)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.4.0  # pin: v4.4.0 → зафиксировать SHA при первом прогоне: git ls-remote
+
+      - name: Set up Python
+        uses: actions/setup-python@v7.0.0  # pin: v7.0.0 → зафиксировать SHA при первом прогоне: git ls-remote
+        with:
+          python-version: "3.12"
+
+      - name: Set up Go
+        uses: actions/setup-go@v5.6.0  # pin: v5.6.0 → зафиксировать SHA при первом прогоне: git ls-remote
+        with:
+          go-version-file: backend/go.mod
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4.4.0  # pin: v4.4.0 → зафиксировать SHA при первом прогоне: git ls-remote
+        with:
+          node-version: "22"
+
+      - name: Install pre-commit
+        run: pip install pre-commit
+
+      # Тот же набор хуков, что и локально (.pre-commit-config.yaml); rev
+      # инструментов — одни и те же здесь и в security.yaml.
+      - name: pre-commit по всему дереву
+        run: pre-commit run --all-files --show-diff-on-failure
+
+  go-tests:
+    name: Go tests
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.4.0  # pin: v4.4.0 → зафиксировать SHA при первом прогоне: git ls-remote
+
+      - name: Set up Go
+        uses: actions/setup-go@v5.6.0  # pin: v5.6.0 → зафиксировать SHA при первом прогоне: git ls-remote
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+
+      - name: go vet
+        working-directory: backend
+        run: go vet ./...
+
+      # -race и -count=1 (без кэша результатов). migrate_test.go поднимает
+      # PostgreSQL через testcontainers — Docker на раннере есть; образ БД
+      # тянется с docker.io, как и на локальном стенде.
+      - name: Unit и интеграционные тесты
+        working-directory: backend
+        run: go test -race -count=1 -timeout=300s ./...
+
+  fe-tests:
+    name: Frontend tests
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.4.0  # pin: v4.4.0 → зафиксировать SHA при первом прогоне: git ls-remote
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4.4.0  # pin: v4.4.0 → зафиксировать SHA при первом прогоне: git ls-remote
+        with:
+          node-version: "22"
+
+      # Кит из реестра: .npmrc и токен — REPLACE_WITH_NPM_TOKEN_PIPELINE_STEP
+      # (шапка файла). Мост — file:../tn-bridge, каталог лежит в дереве.
+      # npm ci требует lock-файл; пока его нет — install, как в Dockerfile.
+      - name: Зависимости
+        run: |
+          if [ -f package-lock.json ]; then npm ci --prefer-offline; else npm install --no-audit --no-fund; fi
+
+      - name: Type-check (vue-tsc)
+        run: npx vue-tsc --noEmit
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests (vitest)
+        run: npx vitest run
+
+      - name: Сборка (vite build)
+        run: npm run build
+
+  smoke:
+    name: Smoke (локальный стенд, только main)
+    runs-on: ubuntu-24.04
+    needs: [compliance]
+    # Дым требует поднятого стенда — гоняем только на push в main.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.4.0  # pin: v4.4.0 → зафиксировать SHA при первом прогоне: git ls-remote
+
+      # Набор local: docker.io без прокси, тег local — тот же путь, что у
+      # разработчика на ноутбуке (Makefile, REGISTRY_PROFILE=local).
+      - name: Сборка образов набором local
+        run: make -C infra build
+
+      # Цель up сама генерирует self-signed сертификат, подставляет профиль
+      # local и передаёт env.local/.env.* как --env-file. Файлы env.local лежат
+      # в репозитории: там нет секретов (check-env.sh, граница проверки).
+      - name: Подъём стенда
+        run: make -C infra up
+
+      # *.localhost на раннере резолвятся в loopback; -k — самоподписанный
+      # сертификат локального прокси. Ждём живости api, готовность (/readyz с
+      # discovery мока и БД) проверяет сам дым.
+      - name: Ожидание стенда
+        run: |
+          for _ in $(seq 1 40); do
+            if curl -ksf --max-time 5 https://api.localhost/healthz >/dev/null; then
+              echo "api отвечает"; exit 0
+            fi
+            sleep 3
+          done
+          echo "стенд не поднялся за 120 с"
+          docker compose -p ozm -f infra/docker-compose.yaml ps
+          exit 1
+
+      - name: Дым
+        run: bash infra/tests/run.sh smoke
+
+      - name: Логи при отказе
+        if: failure()
+        run: docker compose -p ozm -f infra/docker-compose.yaml logs --tail=100
+
+      - name: Остановка стенда
+        if: always()
+        run: make -C infra reset-data CONFIRM=yes

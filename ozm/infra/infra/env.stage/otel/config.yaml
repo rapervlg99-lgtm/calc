@@ -1,0 +1,113 @@
+# Шаблон скилла tnlife-miniapp-engineering: исходный конфиг OTel Collector.
+# Норма — 08-observability.md §1 и §2. Подставьте ozm —
+# имя сервиса (оно же OTEL_SERVICE_NAME и имя сервиса в compose) в шапке и в комментариях.
+#
+# Куда класть: infra/observability/otel-collector.yaml — единственный источник,
+# из которого раскатываются env.stage/otel/config.yaml и env.prod/otel/config.yaml
+# (цель Makefile otel-sync). Проверка дрейфа: make otel-sync && git diff --exit-code.
+# Конфиг env.local/otel/config.yaml отличается ровно двумя вещами: экспортёры
+# пайплайнов [debug] вместо [debug, otlp/external] и отсутствием самого блока
+# exporters.otlp/external — коллектор валидирует все объявленные экспортёры, и
+# локально с плейсхолдером в OTLP_ENDPOINT он не стартовал вовсе (шапка того файла).
+# Путь env.local/otel/config.yaml проверяется приёмкой: в файле обязаны быть
+# подстроки receivers и otlp.
+#
+# §1.8 корп. шаблона: Loki, Grafana и Prometheus как сервисы запрещены — метрики,
+# логи и трейсы уходят наружу по OTLP. Адрес внешнего коллектора и токен в этот
+# файл не пишем: они приходят из env.<контур>/.env.otel, где в репозитории лежат
+# плейсхолдеры REPLACE_WITH_OTLP_ENDPOINT и REPLACE_WITH_OTLP_TOKEN. Переменные
+# форварда принадлежат коллектору: сервис ozm-otel в docker-compose.yaml
+# читает .env.otel через env_file — без этого ${env:…} ниже раскрываются в
+# дефолты внутри контейнера, форвард молча бьёт в localhost, а healthcheck
+# остаётся зелёным. Проверка: `docker compose config` у
+# сервиса ozm-otel показывает OTLP_ENDPOINT в environment.
+#
+# ОБЯЗАТЕЛЬНО прогонять валидацию конфига до `up`, а не ловить крэш-луп
+# контейнера. Как проверить (проверено на образах 0.111.0 и 0.158.0):
+#   docker run --rm --env-file env.<контур>/.env.otel \
+#     -v $PWD/observability/otel-collector.yaml:/etc/otel/c.yaml:ro \
+#     otel/opentelemetry-collector-contrib:0.111.0 validate --config=/etc/otel/c.yaml
+# На свежем каркасе это ОЖИДАЕМО падает — и ровно этот текст означает
+# «плейсхолдер не заполнен, значение подставляет эксплуатация», а не дефект
+# конфига: `exporters::otlp/external: address REPLACE_WITH_OTLP_ENDPOINT:
+# missing port in address` (на 0.158.0 — `otlp/external::clientconfig: …`).
+# Пустой OTLP_ENDPOINT даёт другой текст: `requires a non-empty "endpoint"`.
+# После подстановки host:port та же команда завершается с кодом 0 и без вывода.
+# Конфиг локального стенда (env.local/otel/config.yaml) обязан давать код 0 с
+# окружением из env.local/.env.otel КАК ЕСТЬ, без подстановок руками.
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+  # Скрейп /metrics приложения (решение D5, 08 §9): бэкенд отдаёт метрики на
+  # отдельном порту METRICS_ADDR=:9090, который compose держит только в expose
+  # (внутри сети, наружу не публикуется), а коллектор ходит к нему по имени
+  # сервиса. job_name — контракт с alerts.yaml (лейбл job="ozm", в том
+  # числе up{job} у BackendDown) и с 08 §4: переименовали — правьте оба файла
+  # одним PR. Ресивер prometheus есть только в дистрибутиве
+  # otel/opentelemetry-collector-contrib (образ в docker-compose.yaml); в core
+  # его нет. Чтение docker-логов (receiver filelog) — то же место, если нужно.
+  prometheus:
+    config:
+      scrape_configs:
+        - job_name: ozm
+          # honor_labels: собственный лейбл серии не переименовывается в
+          # exported_*. Нужен для метрик фоновых задач (08 §4, §5): у них есть
+          # СВОЙ лейбл job — имя воркера (job="pdn_purge"), и без honor_labels
+          # скрейпер переписал бы его в exported_job, а правила alerts.yaml
+          # ждут job. Серии без своего job (http_requests_total, up) получают
+          # job=ozm от скрейпа. Принято обоими образами коллектора,
+          # 0.111.0 и 0.158.0 (validate на каркасе набора).
+          honor_labels: true
+          scrape_interval: 15s
+          static_configs:
+            - targets: ["ozm-api:9090"]
+
+processors:
+  batch:
+    send_batch_max_size: 1000
+    timeout: 10s
+    send_batch_size: 100
+  resourcedetection:
+    detectors: [env, system]
+    timeout: 5s
+    override: false
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 200
+
+exporters:
+  debug:
+    verbosity: normal
+  otlp/external:
+    endpoint: ${env:OTLP_ENDPOINT:-localhost:4317}
+    headers:
+      authorization: ${env:OTLP_AUTHORIZATION:-}
+    tls:
+      insecure: ${env:OTLP_INSECURE:-false}
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+  pprof:
+    endpoint: 0.0.0.0:1777
+
+service:
+  extensions: [health_check, pprof]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, resourcedetection, batch]
+      exporters: [debug, otlp/external]
+    metrics:
+      receivers: [otlp, prometheus]
+      processors: [memory_limiter, resourcedetection, batch]
+      exporters: [debug, otlp/external]
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, resourcedetection, batch]
+      exporters: [debug, otlp/external]

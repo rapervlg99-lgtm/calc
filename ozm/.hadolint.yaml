@@ -1,0 +1,26 @@
+---
+# Шаблон скилла tnlife-miniapp-engineering: конфиг hadolint.
+# Подставлять нечего.
+#
+# КУДА КЛАСТЬ: корень репозитория под именем .hadolint.yaml — С ТОЧКОЙ.
+# Его читают хук hadolint-docker из pre-commit-config.yaml и job dockerfile
+# в security.yaml.
+#
+# failure-threshold: warning — замечания уровня warning и выше роняют хук и
+# job; info и style печатаются, но не блокируют.
+
+failure-threshold: warning
+
+# Ключ именно `ignored` — hadolint не понимает `ignore` и молча его пропускает.
+ignored:
+  # DL3008: pin versions in apt-get — недостижимо для alpine и distroless стадий
+  - DL3008
+  # DL3018: pin versions in apk — допустимо на build-стадиях
+  - DL3018
+  # DL3026: allowed registry. hadolint не разбирает реестр в форме
+  # ${DOCKER_PROXY_HOST_1}/gcr.io/distroless/... (вложенный реестр за прокси)
+  # и помечает её ошибкой. Правило «образы только через корп. прокси»
+  # проверяется строже — проверкой [6/15] в infra/tests/run.sh: КАЖДЫЙ FROM
+  # обязан начинаться с ${DOCKER_PROXY_HOST_1}/. Поэтому trustedRegistries
+  # здесь не задаём: при выключенном DL3026 список ничего не проверяет.
+  - DL3026

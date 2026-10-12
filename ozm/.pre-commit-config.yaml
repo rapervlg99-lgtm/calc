@@ -1,0 +1,216 @@
+# Шаблон скилла tnlife-miniapp-engineering: обязательный набор линтеров.
+# Норма — 02-backend-go.md §12 и проверка [12/15] (01-corp-standard.md).
+#
+# КУДА КЛАСТЬ: в корень репозитория ПОД ИМЕНЕМ .pre-commit-config.yaml — с
+# точкой в начале. Здесь файл лежит без точки, потому что это шаблон поставки:
+# скрытые файлы теряются при копировании каталога и не видны в листинге.
+# Переименуйте при копировании:
+#   cp templates/code/pre-commit-config.yaml .pre-commit-config.yaml
+# Проверка [12/15] ищет файл именно по пути .pre-commit-config.yaml — оставите
+# имя без точки, и приёмка скажет «файл не найден».
+#
+# Установка: pipx install pre-commit && pre-commit install
+#
+# Норма §1.9 корп. шаблона и проверка [12/15]: подключены yamllint, actionlint,
+# shellcheck, shfmt, hadolint, markdownlint, codespell, gitleaks, ruff, go-fmt,
+# go-vet. Проверка грепает файл по этим именам — УДАЛЯТЬ хук нельзя, даже если
+# в продукте временно нет соответствующих файлов. Добавлять свои можно.
+#
+# Конфиги, на которые ссылаются хуки, кладутся рядом, в корень репозитория:
+# .yamllint.yml, .hadolint.yaml, .markdownlint.yaml, .gitleaks.toml,
+# .gosec.yaml, .semgrep/rules.yaml, .trivyignore.
+# Нет файла — хук падает на каждом коммите.
+# В .yamllint.yml line-length ослаблен до 240: строки entry: локальных хуков
+# внизу файла в 80 символов не укладываются, самая длинная — 233 (хук semgrep).
+#
+# Своих хуков здесь два, помимо перечисленных нормой: no-expr-in-run (инъекция
+# выражения в run:, класс, который actionlint не ловит) и локальные обёртки
+# gosec/govulncheck/semgrep/trivy-config по схеме «инструмента нет — сообщение
+# и код 0; инструмент есть — его код становится кодом хука».
+#
+# Ревизии (rev) — это точные теги, а не плавающие ветки; поднимайте их осознанно
+# и одним PR, чтобы шум линтеров не смешивался с содержательной правкой.
+# Все rev сверены с upstream (git ls-remote при сборке набора) — теги существуют.
+#
+# СВЕРКА ВЕРСИЙ С security.yaml: инструмент, который есть и
+# здесь, и в CI, идёт одной версией — иначе «локально зелёное, в CI красное»
+# и наоборот. Поднимая версию, меняйте обе точки одним PR.
+# | Инструмент                | здесь                 | security.yaml                                      | статус              |
+# |---------------------------|-----------------------|----------------------------------------------------|---------------------|
+# | gitleaks                  | rev v8.21.2           | gitleaks-action v2.3.9 + GITLEAKS_VERSION "8.21.2" | совпадает           |
+# | hadolint                  | rev v2.12.0           | hadolint-action v3.1.0 (внутри hadolint v2.12.0)   | совпадает           |
+# | gosec, govulncheck, trivy | хуки language: system | gosec v2.29.0, govulncheck v1.7.0, trivy v0.28.0   | пин только в CI (*) |
+# | semgrep                   | локальный хук         | job нет: состав 01 «CI» его не содержит            | только локально     |
+# | остальные линтеры         | только здесь          | —                                                  | сверять не с чем    |
+# (*) у хуков language: system версия — та, что установлена у разработчика;
+#     аргументы порогов у них повторяют аргументы job'ов, чтобы локальный
+#     прогон и CI падали на одних и тех же находках.
+
+repos:
+  # Стандартные хуки
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: check-yaml
+        args: ["--unsafe"]
+      - id: check-json
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ["--maxkb=1024"]
+      - id: mixed-line-ending
+        args: ["--fix=lf"]
+      - id: detect-private-key
+
+  # yamllint — compose, cloud-init, workflows, конфиги наблюдаемости
+  - repo: https://github.com/adrienverge/yamllint
+    rev: v1.35.1
+    hooks:
+      - id: yamllint
+        args: ["-c", ".yamllint.yml"]
+
+  # actionlint — workflows build.yaml, tests.yaml, service-contour.yaml, security.yaml
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.3
+    hooks:
+      - id: actionlint
+
+  # Инъекция выражения в шаг запуска. ЗАПРЕЩЕНО подставлять ${{ … }} прямо в
+  # run: — подстановка идёт ДО разбора shell, поэтому свободная строка
+  # (inputs.*, имя git-тега, заголовок PR, вывод шага, собранный из них)
+  # исполняется как код с правами job'а, а гейт environment строку ввода не
+  # смотрит. Канон: значение уходит в env: шага, а в run: используется
+  # "${ПЕРЕМЕННАЯ}". actionlint этот класс НЕ ловит — проверено на 1.7.12:
+  # инъекция в build.yaml проходит линт с кодом 0. Поэтому
+  # проверка своя, на awk: новых зависимостей не заводит, разбирает блочный
+  # скаляр run: по отступу и не путает его со значениями env: и with:.
+  # Как проверить: вернуть в любой run: подстановку ${{ inputs.image_tag }} —
+  # хук печатает файл, строку и саму строку и роняет коммит; на четырёх
+  # поставляемых workflow код возврата 0.
+  - repo: local
+    hooks:
+      - id: no-expr-in-run
+        name: "инъекция выражения: подстановка в run: workflow"
+        language: system
+        # r — «мы внутри блока run:», b — колонка его ключа: строка с первым
+        # непробельным символом левее b закрывает блок (значения env: и with:
+        # стоят правее и в блок не попадают).
+        entry: "awk '/^[[:space:]]*(- )?run:/{r=1;b=match($0,/[^[:space:]-]/)}r&&NF&&match($0,/[^[:space:]]/)<b{r=0}r&&/\\$\\{\\{/{print FILENAME\":\"FNR\":\"$0;e=1}END{exit e+0}'"
+        files: "^\\.github/workflows/.*\\.ya?ml$"
+
+  # shellcheck + shfmt — infra/tests/run.sh, infra/tests/check-env.sh,
+  # infra/tests/openapi-gate.sh, infra/infra/cloud-init/render.sh и скрипты,
+  # встроенные в vm.yaml.tmpl. Отдельных infra/up.sh и infra/build.sh нет:
+  # они свёрнуты в цели infra/Makefile.
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.10.0.1
+    hooks:
+      - id: shellcheck
+        args: ["-x"]
+
+  - repo: https://github.com/scop/pre-commit-shfmt
+    rev: v3.9.0-1
+    hooks:
+      - id: shfmt
+        args: ["-w", "-i", "2", "-ci"]
+
+  # hadolint — оба Dockerfile: backend/Dockerfile и frontend/Dockerfile
+  - repo: https://github.com/hadolint/hadolint
+    rev: v2.12.0
+    hooks:
+      - id: hadolint-docker
+        args: ["--config", ".hadolint.yaml"]
+
+  # markdownlint — docs/, ADR, README
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.42.0
+    hooks:
+      - id: markdownlint
+        args: ["--config", ".markdownlint.yaml"]
+
+  # codespell — опечатки в коде и документации
+  - repo: https://github.com/codespell-project/codespell
+    rev: v2.3.0
+    hooks:
+      - id: codespell
+        additional_dependencies: [tomli]
+
+  # gitleaks — секреты в коммите. Дублируется в security.yaml: pre-commit
+  # обходится, CI — нет (§ «Секреты в репозитории», проверка [8/15]).
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.21.2
+    hooks:
+      - id: gitleaks
+        args: ["--config", ".gitleaks.toml"]
+
+  # ruff — Python вспомогательных скриптов приёмки
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.9
+    hooks:
+      - id: ruff
+        args: ["--fix"]
+      - id: ruff-format
+
+  # Go: форматирование, vet и чистота go.mod
+  - repo: https://github.com/dnephin/pre-commit-golang
+    rev: v0.5.1
+    hooks:
+      - id: go-fmt
+        files: "^backend/"
+      - id: go-vet
+        files: "^backend/"
+      - id: go-mod-tidy
+        files: "^backend/"
+
+  # Локальные хуки: инструменты ставятся не всеми, поэтому отсутствие
+  # инструмента НЕ блокирует коммит. Полноценный запрет — в CI (security.yaml),
+  # где эти же инструменты обязаны быть установлены и падать по-настоящему
+  # (кроме semgrep: в security.yaml его job'а нет, см. таблицу в шапке).
+  # Аргументы порогов у хуков — те же, что у job'ов security.yaml, чтобы
+  # локальный прогон и CI падали на одних и тех же находках.
+  #
+  # ДВА СЛУЧАЯ РАЗВЕДЕНЫ ЯВНО, и форма записи здесь несущая. Цепочка вида
+  # `command -v X && X … || echo "not installed, skip"` разводит их НЕ ТАК:
+  # `||` срабатывает и на отсутствие инструмента, и на его ненулевой выход,
+  # поэтому найденная уязвимость печатается как «инструмент не установлен», а
+  # коммит проходит. Отсюда `if … then … else … fi`: инструмента нет — печатаем
+  # сообщение и выходим нулём, инструмент есть — его код возврата становится
+  # кодом хука, и находка блокирует коммит.
+  #
+  # Тот же разбор относится к конфигам: конфига нет, а инструмент есть — он
+  # падает, и это видно в выводе хука. Наличие самих конфигов сверяет
+  # проверка [12/15] (infra/tests/run.sh), чтобы дыра не ждала первой
+  # установки инструмента.
+  - repo: local
+    hooks:
+      - id: gosec
+        name: gosec (Go SAST)
+        language: system
+        entry: bash -c 'if command -v gosec >/dev/null; then cd backend && gosec -conf ../.gosec.yaml -severity medium -confidence medium ./...; else echo "gosec не установлен, хук пропущен (в CI он обязателен)"; fi'
+        files: "^backend/.*\\.go$"
+        pass_filenames: false
+
+      - id: govulncheck
+        name: govulncheck (Go SCA)
+        language: system
+        entry: bash -c 'if command -v govulncheck >/dev/null; then cd backend && govulncheck ./...; else echo "govulncheck не установлен, хук пропущен (в CI он обязателен)"; fi'
+        files: "^backend/go\\.(mod|sum)$"
+        pass_filenames: false
+
+      - id: semgrep
+        name: semgrep (multi-lang SAST)
+        language: system
+        entry: bash -c 'if command -v semgrep >/dev/null; then semgrep --config=.semgrep/rules.yaml --error; else echo "semgrep не установлен, хук пропущен (в security.yaml нет job semgrep — правила проверяются только локально)"; fi'
+        pass_filenames: false
+        always_run: false
+
+      # --exit-code 1 обязателен: по умолчанию trivy config печатает находки и
+      # выходит нулём — без флага хук остаётся гейтом только на словах. Порог тот
+      # же, что у job'ов deps и iac в security.yaml.
+      - id: trivy-config
+        name: trivy config (IaC)
+        language: system
+        entry: bash -c 'if command -v trivy >/dev/null; then trivy config --severity CRITICAL,HIGH --exit-code 1 --ignorefile .trivyignore .; else echo "trivy не установлен, хук пропущен (в CI он обязателен)"; fi'
+        pass_filenames: false
+        always_run: false

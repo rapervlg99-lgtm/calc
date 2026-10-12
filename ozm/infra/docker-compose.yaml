@@ -1,0 +1,126 @@
+# Нормативная поставка OZM (§2.2): лимиты ресурсов, healthcheck у каждого сервиса,
+# container_name совпадает с именем сервиса, мониторинг не поднимается как сервис
+# (§1.8 — OTel-коллектор отдельно, конфиги в infra/env.<контур>/otel/).
+#
+# Контуры: COMPOSE_PROFILES=local docker compose -f infra/docker-compose.yaml config -q
+# Значения — из infra/env.<контур>/.env.*; локальный стенд см. dev/docker-compose.local.yml
+name: ozm
+
+x-limits: &limits-small
+  resources:
+    limits: { cpus: "0.50", memory: 512M }
+    reservations: { cpus: "0.10", memory: 128M }
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: ozm-postgres
+    restart: unless-stopped
+    env_file:
+      - ./env.local/.env.pg
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./env.local/postgres/init.sql:/docker-entrypoint-initdb.d/10-init.sql:ro
+      - ./env.local/postgres/init-roles.sql:/docker-entrypoint-initdb.d/20-roles.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-ozm} -d $${POSTGRES_DB:-ozm}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    deploy: *limits-small
+
+  migrate:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    image: ozm-backend:local
+    container_name: ozm-migrate
+    entrypoint: ["/app/ozm-migrate"]
+    restart: "no"
+    env_file:
+      - ./env.local/.env.app
+      - ./env.local/.env.pg
+    environment:
+      DICTS_BASELINE_DIR: /config/dicts
+    volumes:
+      - ../backend/dicts:/config/dicts:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "true"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    deploy: *limits-small
+
+  ozm-backend:
+    image: ozm-backend:local
+    container_name: ozm-backend
+    restart: unless-stopped
+    env_file:
+      - ./env.local/.env.app
+      - ./env.local/.env.pg
+      - ./env.local/.env.otel
+    ports:
+      - "127.0.0.1:8080:8080"
+    tmpfs:
+      - /tmp
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "/app/ozm-server", "-healthcheck"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    deploy:
+      resources:
+        limits: { cpus: "1.00", memory: 1G }
+        reservations: { cpus: "0.20", memory: 256M }
+
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    image: ozm-frontend:local
+    container_name: ozm-frontend
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5173:8080"
+    depends_on:
+      ozm-backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/ >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+    deploy: *limits-small
+
+  ocr:
+    build:
+      context: ../ocr
+      dockerfile: Dockerfile
+    image: ozm-ocr:local
+    container_name: ozm-ocr
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      - ozm-backend
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/capabilities', timeout=5).status==200 else 1)\""]
+      interval: 15s
+      timeout: 10s
+      retries: 8
+      start_period: 60s
+    deploy:
+      resources:
+        limits: { cpus: "2.00", memory: 2G }
+        reservations: { cpus: "0.30", memory: 512M }
+
+volumes:
+  pgdata:

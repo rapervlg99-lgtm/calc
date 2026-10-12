@@ -1,0 +1,16 @@
+# Шаблон скилла tnlife-miniapp-engineering: allowlist CVE для Trivy.
+# Подставлять нечего: файл пустой по
+# замыслу — исключение появляется только вместе с обоснованием.
+#
+# КУДА КЛАСТЬ: корень репозитория под именем .trivyignore — С ТОЧКОЙ.
+# Его читают хук trivy-config из pre-commit-config.yaml (--ignorefile) и job'ы
+# deps и iac в security.yaml (trivyignores).
+#
+# Порог: CRITICAL и HIGH без записи здесь роняют job. Формат записи —
+# идентификатор в начале строки, обоснование в комментарии той же строки:
+#   <CVE-ID>  # owner: <команда>, reason: <почему нельзя починить сейчас>, expires: <YYYY-MM-DD>
+# Запись без owner, reason и expires на ревью не принимается; после expires
+# Trivy снова падает — это и есть напоминание пересмотреть исключение.
+#
+# Пример формы (закомментирован):
+# CVE-2024-00000  # owner: REPLACE_WITH_OWNER_TEAM, reason: fix отсутствует в upstream, expires: REPLACE_WITH_DATE

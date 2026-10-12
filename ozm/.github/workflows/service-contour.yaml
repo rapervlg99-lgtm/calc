@@ -1,0 +1,231 @@
+# Шаблон скилла tnlife-miniapp-engineering: workflow service-contour.yaml —
+# деплой контура пересозданием ВМ. Сделан по readme-deploy §2.5, §4.3 и §10
+# (в корп. шаблоне это два файла, по одному на контур —
+# service-<прод-контур>.yaml и service-<stage-контур>.yaml, здесь один с
+# выбором цели). Подставьте ozm.
+#
+# КУДА КЛАСТЬ: .github/workflows/service-contour.yaml — рядом с build.yaml,
+# tests.yaml (оба из templates/code/ci/) и security.yaml. Синтаксис — GitHub
+# Actions, его проверяет actionlint из pre-commit.
+#
+# ЧТО ДЕЛАЕТ (§4.3): workflow_dispatch с выбором цели → yc CLI по ключу
+# сервисной учётной записи → `render.sh <target>` с переменными из секретов
+# контура → удаление старой ВМ → создание новой из image-family
+# ubuntu-2404-lts-oslogin с этим user-data. На ВМ cloud-init ставит docker,
+# клонирует репозиторий и через cron @reboot зовёт up-app.sh →
+# `make -C infra up ENV_DIR=env.<контур> IMAGE_TAG=<тег>` (vm.yaml.tmpl).
+#
+# ПЕРЕСОЗДАНИЕ, А НЕ ОБНОВЛЕНИЕ. Диск ВМ состояния не хранит: БД — managed,
+# файлы — в объектном хранилище (§2.6; развилка Б5 — канон в
+# references/12-forks-and-adr.md). Если на диске ВМ живёт что-то,
+# кроме клона репозитория и образов, деплой это уничтожит — и это правильно
+# ловится здесь, а не в инциденте.
+#
+# СЕКРЕТЫ — по одному набору на GitHub environment `stage` и `production`, с
+# одинаковыми именами (readme-deploy §10; STAGE и PROD — под разными
+# сервисными учётными записями, §2.4). Их читают yc CLI и targets/<target>.env
+# (форма ${VAR:-плейсхолдер}, значения только из окружения):
+# | Secret                        | Куда идёт                                   |
+# |-------------------------------|---------------------------------------------|
+# | DOCKER_REGISTRY_KEY           | base64 JSON-ключа сервисной учётки → yc CLI |
+# | YC_CLOUD_ID, YC_FOLDER_ID     | yc config и targets/*.env                    |
+# | KMS_KEY_ID                    | targets/*.env → расшифровка deploy-ключа     |
+# | DEPLOY_SSH_KEY_ENCRYPTED_B64  | targets/*.env → шифротекст deploy-ключа      |
+# | ADMIN_SSH_KEY                 | targets/*.env → ssh_authorized_keys ВМ       |
+# | GIT_REPO_URL                  | targets/*.env → clone-repo.sh                |
+# Переменные окружения (vars, не секреты): YC_ZONE и YC_SUBNET_NAME — зона и
+# подсеть контура; пустые — yc остановится на создании ВМ, а не создаст её не
+# там. GIT_HOST_KEY — строка known_hosts корпоративного git-хоста (публичный
+# ключ, поэтому var, а не secret); её подставляет render.sh в clone-repo.sh на
+# ВМ, пустая — render.sh остановится на плейсхолдере. §10 упоминает ещё
+# GITLAB_KEY (код в GitLab), DEPLOY_SSH_KEY (информативно) и TG_*
+# (уведомления) — в этом workflow они не нужны.
+#
+# yc CLI ставится ТОЙ ЖЕ версией и с тем же хешем, что на ВМ, и значение
+# ОДНО: env этого job'а (YC_CLI_VERSION, YC_CLI_SHA256 ниже). Оттуда
+# оно идёт и в шаг установки на раннере, и — через env шага рендера — в
+# vm.yaml.tmpl; литералов в самом шаблоне нет. Одно значение в двух файлах
+# обновлялось бы двумя MR: при рассинхроне раннер скачивает одну версию,
+# ВМ — другую, и падает setup-yc.sh на ВМ, а не проверка в CI. `curl … | bash`
+# из §4.3 ставил бы то, что сегодня лежит в release/stable, без проверки хеша.
+# Так же и отпечаток корпоративного git-хоста: GIT_HOST_KEY (vars, не секрет —
+# это публичный ключ хоста) передаётся в рендер и подставляется в known_hosts
+# на ВМ. Размер ВМ — входы workflow; значения по умолчанию взяты из реализации
+# корп. шаблона для stage, для prod их задаёт заявка в эксплуатацию
+# (templates/project-docs/s0-requests.md).
+#
+# Ревизии actions — ТОЧНЫЕ теги, те же, что в security.yaml (checkout v4.4.0).
+# Раннер — ubuntu-24.04, как в §4.3.
+#
+# Как проверить: python3 -c "import yaml; yaml.safe_load(open('.github/workflows/service-contour.yaml'))";
+# actionlint .github/workflows/service-contour.yaml; шаг рендера локально —
+# IMAGE_TAG=… ADMIN_SSH_KEY="…" … bash infra/infra/cloud-init/render.sh yc-stage /tmp/ud.
+
+name: service-contour
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Площадка (targets/<target>.env)"
+        type: choice
+        options: [yc-stage, yc-prod]
+        required: true
+      image_tag:
+        description: "Тег образов из build.yaml (main-abc12345 или v1.2.3)"
+        type: string
+        required: true
+      confirm:
+        description: "Для yc-prod введите PROD"
+        type: string
+        required: false
+        default: ""
+      cores:
+        description: "vCPU ВМ"
+        type: string
+        required: false
+        default: "2"
+      memory_gb:
+        description: "ОЗУ ВМ, ГБ"
+        type: string
+        required: false
+        default: "4"
+      disk_gb:
+        description: "Диск ВМ, ГБ"
+        type: string
+        required: false
+        default: "30"
+
+permissions:
+  contents: read
+
+jobs:
+  recreate-vm:
+    name: Пересоздать ВМ ${{ inputs.target }}
+    runs-on: ubuntu-24.04
+    # Environment даёт секреты контура и правило подтверждения (reviewers) в
+    # настройках репозитория; prod дополнительно требует слово PROD во входе.
+    environment: ${{ inputs.target == 'yc-prod' && 'production' || 'stage' }}
+    if: inputs.target == 'yc-stage' || inputs.confirm == 'PROD'
+    env:
+      SERVICE: ozm
+      CONTOUR: ${{ inputs.target == 'yc-prod' && 'prod' || 'stage' }}
+      # ЕДИНСТВЕННЫЙ источник версии и хеша yc CLI: отсюда их берёт и шаг
+      # установки на раннере, и render.sh для vm.yaml.tmpl (env job'а виден
+      # всем шагам). В самом шаблоне литералов нет.
+      # Как получить: curl -sS https://storage.yandexcloud.net/yandexcloud-yc/release/stable
+      # затем sha256sum release/<версия>/linux/amd64/yc с доверенной станции.
+      YC_CLI_VERSION: REPLACE_WITH_YC_CLI_VERSION
+      YC_CLI_SHA256: REPLACE_WITH_YC_CLI_SHA256
+    steps:
+      # image_tag — свободная строка (type: string), а дальше она попадает и в
+      # тег образа, и в вывод шага «Итог». Проверяем ФОРМУ до первого
+      # использования: право на workflow_dispatch не равно праву на секреты
+      # environment production, а гейт environment строку ввода не смотрит.
+      # Формат — тот, что выдаёт build.yaml: main-<8 hex> или vX.Y.Z.
+      - name: Проверка формата image_tag
+        env:
+          IMAGE_TAG: ${{ inputs.image_tag }}
+        run: |
+          printf '%s' "${IMAGE_TAG}" | grep -qE '^(main-[0-9a-f]{8}|v[0-9]+\.[0-9]+\.[0-9]+)$' || {
+            echo "image_tag='${IMAGE_TAG}': ожидается main-<8 hex> или vX.Y.Z"; exit 1; }
+
+      - name: Checkout
+        uses: actions/checkout@v4.4.0  # pin: v4.4.0 → зафиксировать SHA при первом прогоне: git ls-remote
+
+      - name: yc CLI (версия и хеш зафиксированы, как в vm.yaml.tmpl)
+        run: |
+          curl -fsSL --retry 3 \
+            "https://storage.yandexcloud.net/yandexcloud-yc/release/${YC_CLI_VERSION}/linux/amd64/yc" \
+            -o "${RUNNER_TEMP}/yc"
+          echo "${YC_CLI_SHA256}  ${RUNNER_TEMP}/yc" | sha256sum -c -
+          sudo install -m 0755 "${RUNNER_TEMP}/yc" /usr/local/bin/yc
+          yc version
+
+      # Ключ сервисной учётной записи: yc копирует его в свой профиль, файл
+      # на диске раннера после этого не нужен. Раннер одноразовый.
+      - name: Авторизация yc
+        env:
+          SA_KEY_B64: ${{ secrets.DOCKER_REGISTRY_KEY }}
+          YC_CLOUD_ID: ${{ secrets.YC_CLOUD_ID }}
+          YC_FOLDER_ID: ${{ secrets.YC_FOLDER_ID }}
+        run: |
+          printf '%s' "${SA_KEY_B64}" | base64 -d > "${RUNNER_TEMP}/sa-key.json"
+          yc config set service-account-key "${RUNNER_TEMP}/sa-key.json"
+          yc config set cloud-id "${YC_CLOUD_ID}"
+          yc config set folder-id "${YC_FOLDER_ID}"
+          rm -f "${RUNNER_TEMP}/sa-key.json"
+
+      # render.sh читает targets/<target>.env, где каждая переменная —
+      # ${VAR:-плейсхолдер}: значения берутся из этого окружения. Плейсхолдер,
+      # оставшийся в выводе (в том числе в самом vm.yaml.tmpl), — exit 1, файл
+      # удалён: брак на ВМ не едет.
+      - name: Рендер cloud-init (render.sh)
+        env:
+          TARGET: ${{ inputs.target }}
+          IMAGE_TAG: ${{ inputs.image_tag }}
+          ADMIN_SSH_KEY: ${{ secrets.ADMIN_SSH_KEY }}
+          GIT_REPO_URL: ${{ secrets.GIT_REPO_URL }}
+          YC_CLOUD_ID: ${{ secrets.YC_CLOUD_ID }}
+          YC_FOLDER_ID: ${{ secrets.YC_FOLDER_ID }}
+          KMS_KEY_ID: ${{ secrets.KMS_KEY_ID }}
+          DEPLOY_SSH_KEY_ENCRYPTED_B64: ${{ secrets.DEPLOY_SSH_KEY_ENCRYPTED_B64 }}
+          # Отпечаток git-хоста — публичный ключ, поэтому vars, а не secrets;
+          # строка known_hosts целиком (ssh-keyscan -t ed25519 <git-host>).
+          GIT_HOST_KEY: ${{ vars.GIT_HOST_KEY }}
+          # YC_CLI_VERSION и YC_CLI_SHA256 приходят из env job'а — того же,
+          # что у шага установки yc: одно значение, один MR.
+        run: bash infra/infra/cloud-init/render.sh "${TARGET}" "${RUNNER_TEMP}/cloud-init.yaml"
+
+      - name: Удаление старой ВМ (если есть)
+        run: yc compute instance delete "${SERVICE}-${CONTOUR}" || true
+
+      # image-family ubuntu-2404-lts-oslogin — §4.3; nat-ip-version=ipv4 — как в
+      # §4.3, доступность порта 80 снаружи ограничивает security group (§2.4),
+      # а не отсутствие адреса.
+      - name: Создание ВМ из cloud-init
+        env:
+          YC_ZONE: ${{ vars.YC_ZONE }}
+          YC_SUBNET_NAME: ${{ vars.YC_SUBNET_NAME }}
+          VM_CORES: ${{ inputs.cores }}
+          VM_MEMORY_GB: ${{ inputs.memory_gb }}
+          VM_DISK_GB: ${{ inputs.disk_gb }}
+        run: |
+          test -n "${YC_ZONE}" || { echo "vars.YC_ZONE не задан для environment контура"; exit 1; }
+          test -n "${YC_SUBNET_NAME}" || { echo "vars.YC_SUBNET_NAME не задан для environment контура"; exit 1; }
+          yc compute instance create \
+            --name "${SERVICE}-${CONTOUR}" \
+            --zone "${YC_ZONE}" \
+            --image-family ubuntu-2404-lts-oslogin \
+            --image-folder-id standard-images \
+            --cores "${VM_CORES}" \
+            --memory "${VM_MEMORY_GB}" \
+            --disk-size "${VM_DISK_GB}" \
+            --network-interface "subnet-name=${YC_SUBNET_NAME},nat-ip-version=ipv4" \
+            --metadata-from-file "user-data=${RUNNER_TEMP}/cloud-init.yaml"
+
+      # `rm -f sa-key.json` из шага авторизации файл убирает, а профиль yc —
+      # нет: ключ сервисной учётки остаётся в ~/.config/yandex-cloud до конца
+      # job'а. Раннер одноразовый, но любой следующий шаг его читает, поэтому
+      # профиль удаляется сразу после того, как yc больше не нужен.
+      - name: Убрать профиль yc с ключом сервисной учётки
+        if: always()
+        run: rm -rf "${HOME}/.config/yandex-cloud"
+
+      # Значения входов и github.actor идут через env, а НЕ подстановкой
+      # ${{ … }} прямо в run: свободная строка вставлялась бы в скрипт до его
+      # разбора оболочкой, и `v1.2.3$(…)` исполнился бы на раннере с секретами
+      # environment production.
+      - name: Итог
+        env:
+          TARGET: ${{ inputs.target }}
+          IMAGE_TAG: ${{ inputs.image_tag }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          {
+            echo "### ВМ ${SERVICE}-${CONTOUR} пересоздана"
+            echo "- Цель: \`${TARGET}\`"
+            echo "- Тег образов: \`${IMAGE_TAG}\`"
+            echo "- Запустил: \`${ACTOR}\`"
+            echo "- Стек поднимает cloud-init: cron @reboot → up-app.sh → make -C infra up"
+          } >> "${GITHUB_STEP_SUMMARY}"

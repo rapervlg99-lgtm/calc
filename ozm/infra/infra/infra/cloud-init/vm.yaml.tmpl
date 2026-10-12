@@ -1,0 +1,273 @@
+#cloud-config
+# Шаблон скилла tnlife-miniapp-engineering: единый cloud-init ВМ продукта.
+# Норма — 01-corp-standard.md, «cloud-init».
+# Подставьте ozm — имя сервиса латиницей, то же, что в compose.
+#
+# КУДА КЛАСТЬ: infra/infra/cloud-init/vm.yaml.tmpl. Удвоение infra — не опечатка:
+# корп-шаблон (§2.5) задаёт путь infra/cloud-init/ от корня СВОЕГО репозитория,
+# а когда шаблон целиком кладут в каталог infra/ монорепо, infra удваивается.
+# Проверка [7/15] грепает именно удвоенный путь — сверьте его со своим run.sh.
+#
+# Рендеринг: bash infra/infra/cloud-init/render.sh [--allow-placeholders] <target> [output]
+# Targets: yc-prod, yc-stage, libvirt, vagrant
+#
+# ЛИТЕРАЛЬНЫХ ПЛЕЙСХОЛДЕРОВ В ЭТОМ ФАЙЛЕ НЕТ. Всё, что меняется от контура к
+# контуру, приходит подстановкой render.sh — иначе одно значение жило бы в двух
+# файлах (шаблон и env job'а ci/service-contour.yaml) и обновлялось двумя MR,
+# а рассинхрон версии yc CLI ловился бы не в CI, а падением setup-yc.sh на ВМ.
+# Ниже — те три переменные и их единственный источник:
+# | Переменная      | Где на ВМ      | Кто задаёт → как получить                                                    |
+# |-----------------|----------------|------------------------------------------------------------------------------|
+# | YC_CLI_VERSION  | setup-yc.sh    | env job'а ci/service-contour.yaml → curl -sS https://storage.yandexcloud.net/yandexcloud-yc/release/stable |
+# | YC_CLI_SHA256   | setup-yc.sh    | тот же env → sha256sum бинарника release/<версия>/linux/amd64/yc с доверенной станции |
+# | GIT_HOST_KEY    | clone-repo.sh  | vars.GIT_HOST_KEY → ssh-keyscan -t ed25519 <git-host> 2>/dev/null — строка known_hosts целиком |
+# Пустое значение на yc-* — exit 1 ДО рендера (REQUIRED_VARS в render.sh); на
+# libvirt и vagrant они не нужны: ветки yc сами себя пропускают по detect-env.sh.
+#
+# КАК ШАБЛОН ПОПАДАЕТ НА ВМ (readme-deploy §4.3): workflow
+# ci/service-contour.yaml (workflow_dispatch с выбором цели) → render.sh
+# <target> с переменными из секретов контура → удаление старой ВМ →
+# создание новой из image-family ubuntu-2404-lts-oslogin с этим user-data.
+#
+# ЧТО ЗАПУСКАЕТСЯ НА ВМ: скрипт up-app.sh зовёт `make -C infra up
+# ENV_DIR=env.<площадка> IMAGE_TAG=<тег>` — единственный вход стека, который
+# поставляет набор (отдельного infra/up.sh нет, up.sh и build.sh свёрнуты в
+# цели Makefile); тег приходит из targets/<target>.env.
+# Отсюда требование к клонируемому репозиторию: в нём по пути infra/ должны
+# лежать Makefile, docker-compose.yaml и каталог env.<площадка>. Какой из
+# четырёх репозиториев субгруппы mini-apps клонируется — REPLACE_WITH_GIT_REPO_URL
+# в targets/*.env, открытый вопрос 01-corp-standard.md.
+#
+# §2.5: ОДИН шаблон на все три площадки исполнения — local, virtualization,
+# cloud. Различия вынесены в targets/<target>.env, а сама площадка определяется
+# в рантайме по наличию metadata-сервиса Yandex Cloud (169.254.169.254).
+# Заводить отдельный шаблон под libvirt или Vagrant ЗАПРЕЩЕНО.
+#
+# База ОС — Ubuntu 24.04 LTS. Шаблон версию ОС не пинит: её задаёт образ ВМ,
+# и это проверяется ревью при развёртывании, а не автопроверкой.
+
+users:
+  - name: prj
+    groups: [docker, sudo]
+    # sudo без пароля — ОСОЗНАННОЕ РЕШЕНИЕ, а не случайное наследие. Кому на
+    # этой ВМ нужен root после bootstrap:
+    # | Кто                                   | Что делает                                  | Нужен ли sudo             |
+    # |---------------------------------------|---------------------------------------------|---------------------------|
+    # | runcmd (install-docker, setup-yc, ...) | ставит docker, yc, клонирует репозиторий   | нет — cloud-init идёт от root |
+    # | cron @reboot up-app.sh от prj          | docker login, make -C infra up              | нет — хватает группы docker |
+    # | администратор по ADMIN_SSH_KEY         | apt, daemon.json, диск, разбор инцидента    | да, и заранее не перечислить |
+    # Сервису sudo не нужен вовсе; сузить правило до списка команд — значит
+    # придумать регламент эксплуатации, которого в источниках нет, и оставить
+    # ВМ без единственного пути обслуживания: другого административного входа
+    # (второй пользователь, пароль root) шаблон не создаёт. Группа docker и так
+    # эквивалентна root, поэтому запрет sudo безопасности не добавил бы.
+    # Что сделано вместо сужения: lock_passwd и ssh_pwauth: false ниже — root
+    # доступен только сессии, вошедшей по ключу ADMIN_SSH_KEY.
+    # Правило cloud-init кладёт в отдельный файл /etc/sudoers.d/90-cloud-init-users.
+    # ОТКРЫТЫЙ ВОПРОС службе эксплуатации: есть ли у контура отдельный
+    # break-glass вход (serial console, bastion, OS Login)? Если да — заменить
+    # правило регламентным списком и убрать sudo из groups; форма записи:
+    #   sudo:
+    #     - "ALL=(ALL) NOPASSWD:REPLACE_WITH_OPS_SUDO_COMMAND_LIST"
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    # Пароля у prj нет: вход и sudo — только из сессии по ключу.
+    lock_passwd: true
+    shell: /bin/bash
+    ssh_authorized_keys:
+      - ${ADMIN_SSH_KEY}
+
+# Вход по паролю выключен на уровне sshd: единственный путь на ВМ — ADMIN_SSH_KEY.
+ssh_pwauth: false
+
+package_update: true
+package_upgrade: false
+
+packages:
+  - apt-transport-https
+  - ca-certificates
+  - curl
+  - gnupg
+  - git
+  - jq
+  - wget
+  - unzip
+  # make — не украшение: стек поднимает цель up из infra/Makefile (см. up-app.sh
+  # ниже), а в минимальном облачном образе Ubuntu make не предустановлен.
+  - make
+
+write_files:
+  - path: /etc/docker/daemon.json
+    content: |
+      {
+        "log-driver": "local",
+        "log-opts": {
+          "max-size": "50m",
+          "max-file": "5"
+        },
+        "live-restore": true
+      }
+
+  - path: /home/prj/install-docker.sh
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+      # Docker Engine, установка через современный keyring
+      install -m 0755 -d /etc/apt/keyrings
+      curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
+        -o /etc/apt/keyrings/docker.asc
+      chmod a+r /etc/apt/keyrings/docker.asc
+      echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] \
+        https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
+        > /etc/apt/sources.list.d/docker.list
+      apt-get update -q
+      apt-get install -y -q docker-ce docker-ce-cli containerd.io \
+        docker-buildx-plugin docker-compose-plugin
+      systemctl enable docker
+      systemctl start docker
+
+  - path: /home/prj/detect-env.sh
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+      # Авто-детект Yandex Cloud по metadata-сервису
+      if curl -sf --max-time 2 http://169.254.169.254/latest/meta-data/instance-id >/dev/null 2>&1; then
+        echo "YC"
+      else
+        echo "LOCAL"
+      fi
+
+  - path: /home/prj/setup-yc.sh
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+      # Устанавливает yc CLI и настраивает облако/каталог (только в YC).
+      # Версия и sha256 бинарника ЗАФИКСИРОВАНЫ: `curl … install.sh | bash`
+      # ставит то, что сегодня лежит в release/stable, без проверки — цепочка
+      # поставки ВМ зависит от чужого хранилища.
+      # Раскладка release/<версия>/linux/amd64/yc — та же, что читает install.sh.
+      # Архитектура зафиксирована как amd64: хеш от неё зависит.
+      # Значения подставляет render.sh из окружения рендера — того же, из
+      # которого их берёт шаг установки yc на раннере (env job'а
+      # ci/service-contour.yaml). Здесь литералов нет намеренно: одно значение —
+      # один источник — один MR. Как получить:
+      #   curl -sS https://storage.yandexcloud.net/yandexcloud-yc/release/stable   # текущая стабильная версия
+      #   curl -sSO https://storage.yandexcloud.net/yandexcloud-yc/release/<версия>/linux/amd64/yc
+      #   sha256sum yc                                                             # с доверенной рабочей станции
+      YC_CLI_VERSION="${YC_CLI_VERSION}"
+      YC_CLI_SHA256="${YC_CLI_SHA256}"
+      ENV_TYPE=$(bash /home/prj/detect-env.sh)
+      if [ "$ENV_TYPE" != "YC" ]; then
+        echo "Не Yandex Cloud — установка yc CLI пропущена"
+        exit 0
+      fi
+      YC_URL="https://storage.yandexcloud.net/yandexcloud-yc/release/${YC_CLI_VERSION}/linux/amd64/yc"
+      TMP_YC=$(mktemp)
+      trap 'rm -f "$TMP_YC"' EXIT
+      curl -fsSL --retry 3 "$YC_URL" -o "$TMP_YC"
+      # Хеш не сошёлся — установка останавливается здесь, бинарник не попадает в PATH.
+      echo "${YC_CLI_SHA256}  ${TMP_YC}" | sha256sum -c - >/dev/null
+      install -m 0755 "$TMP_YC" /usr/local/bin/yc
+      /usr/local/bin/yc version
+      /usr/local/bin/yc config set cloud-id "${YC_CLOUD_ID}"
+      /usr/local/bin/yc config set folder-id "${YC_FOLDER_ID}"
+      echo "yc CLI ${YC_CLI_VERSION} настроен: облако ${YC_CLOUD_ID}, каталог ${YC_FOLDER_ID}"
+
+  - path: /home/prj/clone-repo.sh
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+      # Клонирование репозитория; deploy-ключ расшифровывается из YC KMS.
+      # Приватного ключа в открытом виде нет ни в шаблоне, ни в targets/*.env —
+      # в env лежит только шифротекст, ключ расшифровки живёт в KMS.
+      ENV_TYPE=$(bash /home/prj/detect-env.sh)
+      if [ "$ENV_TYPE" = "YC" ]; then
+        ENCRYPTED_KEY_B64="${DEPLOY_SSH_KEY_ENCRYPTED_B64}"
+        mkdir -p /home/prj/.ssh
+        chmod 700 /home/prj/.ssh
+        echo "$ENCRYPTED_KEY_B64" | base64 -d | \
+          /usr/local/bin/yc kms symmetric-crypto decrypt \
+            --id "${KMS_KEY_ID}" \
+            --ciphertext-file /dev/stdin \
+            --plaintext-file /home/prj/.ssh/id_deploy
+        chmod 600 /home/prj/.ssh/id_deploy
+        chown prj:prj /home/prj/.ssh/id_deploy
+        # Отпечаток корпоративного git-хоста записан ЗАРАНЕЕ, а не принят на
+        # веру при первом соединении: StrictHostKeyChecking=no принимает любой
+        # хост, в том числе подменённый.
+        # accept-new принимает только неизвестные хосты и отвергает изменившийся
+        # ключ; с предзаписанным отпечатком git-хост неизвестным не бывает.
+        # Значение подставляет render.sh из GIT_HOST_KEY (vars.GIT_HOST_KEY в
+        # ci/service-contour.yaml) — литерала здесь нет, источник один.
+        # Зафиксировать при первом прогоне с доверенной рабочей станции; хост —
+        # из GIT_REPO_URL, тип ключа — тот, что публикует владелец GitLab:
+        #   ssh-keyscan -t ed25519 <git-host> 2>/dev/null        # строка known_hosts целиком
+        #   ssh-keygen -lf <(ssh-keyscan -t ed25519 <git-host> 2>/dev/null)   # сверить отпечаток с опубликованным
+        printf '%s\n' '${GIT_HOST_KEY}' > /home/prj/.ssh/known_hosts
+        chmod 644 /home/prj/.ssh/known_hosts
+        chown prj:prj /home/prj/.ssh/known_hosts
+        # Скрипт идёт от root, поэтому файл known_hosts указан явно — иначе ssh
+        # взял бы /root/.ssh/known_hosts, и предзапись осталась бы без дела.
+        SSH_OPTS="-o IdentitiesOnly=yes -o UserKnownHostsFile=/home/prj/.ssh/known_hosts"
+        export GIT_SSH_COMMAND="ssh -i /home/prj/.ssh/id_deploy ${SSH_OPTS} -o StrictHostKeyChecking=accept-new"
+      fi
+      git clone "${GIT_REPO_URL}" /home/prj/app
+      chown -R prj:prj /home/prj/app
+
+  - path: /home/prj/login-registry.sh
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+      # Логин в реестр по IAM-токену из metadata: прямые pull с публичных
+      # реестров на ВМ запрещены (§2.1), образы тянутся только через реестр ТН.
+      # Тот же запрет — причина ARG DOCKER_PROXY_HOST_1 в обоих Dockerfile.
+      ENV_TYPE=$(bash /home/prj/detect-env.sh)
+      if [ "$ENV_TYPE" = "YC" ]; then
+        IAM_TOKEN=$(curl -sf -H "Metadata-Flavor: Google" \
+          http://169.254.169.254/computeMetadata/v1/instance/service-accounts/default/token \
+          | jq -r .access_token)
+        echo "$IAM_TOKEN" | docker login \
+          --username iam \
+          --password-stdin \
+          cr.yandex
+        echo "Выполнен вход в cr.yandex"
+      fi
+
+  - path: /home/prj/up-app.sh
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+      cd /home/prj/app
+      bash /home/prj/login-registry.sh
+      echo "DEPLOYMENT=${DEPLOYMENT_TARGET}" > .build.deployment
+      # Единый вход стека — цель up из infra/Makefile. Отдельного infra/up.sh
+      # набор не поставляет: up.sh и build.sh свёрнуты в цели Makefile (шапка
+      # templates/code/Makefile). Каталог окружения выбирается по площадке:
+      # DEPLOYMENT_TARGET здесь уже подставлен рендером (local|stage|prod), и
+      # env.<площадка> — тот же каталог, что в env.{local,stage,prod}.
+      # Профиль compose цель up подставляет сама: local для env.local, пустой
+      # для контуров, поэтому сервисы стенда на stage и prod не поднимаются.
+      # IMAGE_TAG подставлен рендером из targets/<target>.env (в CI — вход
+      # image_tag workflow service-contour.yaml): compose тянет из реестра
+      # именно этот тег, а не дефолтный local из Makefile.
+      make -C infra up ENV_DIR="env.${DEPLOYMENT_TARGET}" IMAGE_TAG="${IMAGE_TAG}"
+
+  - path: /etc/cron.d/ozm-startup
+    content: |
+      @reboot prj /home/prj/up-app.sh >> /var/log/ozm-startup.log 2>&1
+
+runcmd:
+  - bash /home/prj/install-docker.sh
+  - bash /home/prj/setup-yc.sh
+  - bash /home/prj/clone-repo.sh
+  - chown -R prj:prj /home/prj
+  - systemctl restart cron
+
+final_message: |
+  cloud-init ozm-api завершён за $UPTIME секунд.
+  Target: ${DEPLOYMENT_TARGET}
