@@ -59,7 +59,7 @@ OCR, по желанию Caddy для HTTPS). Всё на одной машин�
 
 ```bash
 docker run --rm httpd:2.4-alpine htpasswd -nbB petrov 'пароль' >> dev/deploy/htpasswd
-docker compose -f dev/docker-compose.yml exec frontend nginx -s reload
+docker compose -f dev/docker-compose.yml exec ozm-web nginx -s reload
 ```
 
 ## Обновление

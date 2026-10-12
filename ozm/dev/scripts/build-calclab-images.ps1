@@ -1,4 +1,4 @@
-﻿# Сборка релиз-пакета ОЗМ для скрытой страницы https://calclab.pro/ozm/
+# Сборка релиз-пакета ОЗМ для скрытой страницы https://calclab.pro/ozm/
 # (см. calclab.pro/deploy/OZM.ru.md). Запускать из папки калькулятора (calc/ozm):
 #   powershell -File dev\scripts\build-calclab-images.ps1 [-OutDir D:\dev\ozm-release] [-BasePath /ozm/]
 #
@@ -43,7 +43,8 @@ OCRPDF_MAX_SEC_PER_PAGE=300
 OCRPDF_MIN_JOB_SEC=600
 OCRPDF_TEMPLATE_CACHE_MB=128
 OCRPDF_TEMPLATE_DISK_MB=256
-CALC_OZM_APP_LOG_LEVEL=info
+CALC_OZM_APP_ADMIN_TOKEN=
+LOG_LEVEL=info
 "@
   [IO.File]::WriteAllText($envFile, $content.Replace("`r`n", "`n"), (New-Object Text.UTF8Encoding $false))
   Write-Host "создан $envFile"

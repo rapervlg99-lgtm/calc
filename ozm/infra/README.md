@@ -37,23 +37,35 @@ COMPLIANCE_STRICT=1 bash infra/tests/run.sh   # то же переменной �
 
 ## Состояние
 
-`compliance` проходит целиком (PASS=15, FAIL=0, SKIP=0) в обоих режимах. Два
-направления ещё не закрыты и требуют отдельной работы:
+`compliance` проходит целиком (PASS=15, FAIL=0, SKIP=0) в обоих режимах; контуры,
+`docker-compose.yaml` и бэкенд говорят на одних именах: подключение к БД —
+`PGHOST`/`PGPORT`/`PGDATABASE`/`PGUSER`/`PGPASSWORD`/`PGSSLMODE` (+`PGSSLROOTCERT`,
+`PG_MIGRATE_*` для роли владельца схемы), рантайм — `HTTP_ADDR`, `LOG_LEVEL`,
+`CORS_ALLOWED_ORIGINS`; продуктовые настройки — `CALC_OZM_APP_*`. Сервисы называются
+так, как их зовут контуры: `ozm-postgres`, `ozm-api`, `ozm-web`, `ozm-ocr`,
+`ozm-migrate`.
 
-- контуры `env.<контур>/.env.*` пока несут общие имена шаблона (`HTTP_ADDR`,
-  `SESSION_SECRET`, …), а бэкенд читает переменные с префиксом `CALC_OZM_`, и файлы
-  `.env.*` пока не в git (`ozm/.gitignore`); без этого `docker-compose.yaml` не
-  настроит сервисы, а в CI проверка [3/15] получит пустой контур;
-- `smoke` ждёт поднятого стенда с прокси, моком Цифрового профиля и коллектором OTel
-  и имён сервисов вида `ozm-api`/`ozm-web` — в `docker-compose.yaml` их пока нет.
+Что ещё не закрыто и требует отдельной работы:
+
+- сами файлы `.env.*` пока не в git (их отсекает `ozm/.gitignore` строкой `.env.*`),
+  поэтому в свежем клоне проверка [3/15] не найдёт ни одного контура: норме нужны
+  исключения для `infra/env.<контур>/.env.*` (значения stage и prod — только
+  плейсхолдеры `REPLACE_WITH_*`, в local — значения стенда);
+- стенд пока не тот, что в бланке нормы: нет прокси (`ozm-traefik`), мока Цифрового
+  профиля (`ozm-oidc`), коллектора OTel (`ozm-otel`) и `ozm-mailpit`, а вход один —
+  nginx фронта; из-за этого `smoke` (цели `https://api.localhost/healthz`,
+  `https://app.localhost/healthz`, `oidc-mock`, `docker-health:ozm-otel`) не проходит;
+- `TRUSTED_PROXY_CIDR` из контура пока никто не читает: образ фронта не несёт
+  realip-шаблона нормы (`realip.conf.template` + `security-headers.conf`).
 
 ## Имена
 
 | Конвенция | Значение |
 |-----------|----------|
 | Product slug | `ozm` |
-| Env prefix | `CALC_OZM_*` |
-| Compose service (dev) | `ozm-backend` |
+| Env: БД и рантайм | канонические имена нормы (`PG*`, `HTTP_ADDR`, `LOG_LEVEL`, `CORS_ALLOWED_ORIGINS`) |
+| Env: продукт | `CALC_OZM_APP_*` (распознавание, зрение, выгрузки) |
+| Compose services | `ozm-api`, `ozm-web`, `ozm-ocr`, `ozm-postgres`, `ozm-migrate` |
 | Binaries | `ozm-server`, `ozm-migrate` |
 | DB | `ozm` |
 

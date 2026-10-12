@@ -27,8 +27,8 @@
 - Frontend: Vue 3 + Vite + Pinia
 - OCR: Python 3.12, пакет `ocrpdf` в `ocr/` (PyMuPDF, OpenCV, RapidOCR + Tesseract), тесты `pytest ocr/tests`, журнал `ocr/WORKLOG.md`
 - Compose: `dev/docker-compose.local.yml` → UI `:5173`, API `:8080`, OCR `:8000`
-- Env prefix: `CALC_OZM_*`
-- Service: `ozm-backend`, DB: `ozm`
+- Env: канонические имена нормы — `PGHOST`/`PGPORT`/`PGDATABASE`/`PGUSER`/`PGPASSWORD`/`PGSSLMODE`, `HTTP_ADDR`, `LOG_LEVEL`, `CORS_ALLOWED_ORIGINS` (те же ключи лежат в контурах `infra/env.<контур>/.env.*`); продуктовые настройки (распознавание, зрение, выгрузки) — `CALC_OZM_APP_*`
+- Services: `ozm-api` (API), `ozm-web` (SPA), `ozm-ocr`, `ozm-postgres`, `ozm-migrate`; DB: `ozm`
 
 ## Локальный URL
 

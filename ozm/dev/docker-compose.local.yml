@@ -1,37 +1,43 @@
 services:
-  migrate:
+  ozm-migrate:
     build:
       context: ./backend
       dockerfile: Dockerfile
     image: ozm-backend:local
     entrypoint: ["/app/ozm-migrate"]
     environment:
-      CALC_OZM_PG_ADDR: postgres:5432
-      CALC_OZM_PG_USER: ozm
-      CALC_OZM_PG_PASSWORD: ozm
-      CALC_OZM_PG_DATABASE: ozm
-      CALC_OZM_PG_TLS_MODE: disable
+      # Имена — канонические из §12 корп. шаблона, те же, что в контурах
+      # infra/env.<контур>/.env.pg (см. backend/internal/envconfig).
+      PGHOST: ozm-postgres
+      PGPORT: "5432"
+      PGUSER: ozm
+      PGPASSWORD: ozm
+      PGDATABASE: ozm
+      PGSSLMODE: disable
+      # Локальный стенд: роли рантайма и владельца схемы совпадают, поэтому
+      # PG_MIGRATE_* не задаём — миграции идут под PGUSER.
       DICTS_BASELINE_DIR: /config/dicts
     volumes:
       - ./backend/dicts:/config/dicts:ro
     depends_on:
-      postgres:
+      ozm-postgres:
         condition: service_healthy
     restart: "no"
 
-  ozm-backend:
+  ozm-api:
     image: ozm-backend:local
     ports:
       - "127.0.0.1:8080:8080"
     environment:
-      CALC_OZM_PG_ADDR: postgres:5432
-      CALC_OZM_PG_USER: ozm
-      CALC_OZM_PG_PASSWORD: ozm
-      CALC_OZM_PG_DATABASE: ozm
-      CALC_OZM_PG_TLS_MODE: disable
-      CALC_OZM_APP_HTTP_ADDR: ":8080"
-      CALC_OZM_APP_ALLOWED_ORIGINS: "http://localhost:5173,http://127.0.0.1:5173"
-      CALC_OZM_APP_LOG_LEVEL: info
+      PGHOST: ozm-postgres
+      PGPORT: "5432"
+      PGUSER: ozm
+      PGPASSWORD: ozm
+      PGDATABASE: ozm
+      PGSSLMODE: disable
+      HTTP_ADDR: ":8080"
+      CORS_ALLOWED_ORIGINS: "http://localhost:5173,http://127.0.0.1:5173"
+      LOG_LEVEL: info
       # OCR on for local (AUTH_DEV_MODE). Live PDF pipeline needs pdftoppm/LLM — Phase 3.
       CALC_OZM_APP_OCR_ENABLED: "true"
       CALC_OZM_APP_AUTH_DEV_MODE: "true"
@@ -39,9 +45,9 @@ services:
       CALC_OZM_APP_VISION_PROVIDER: ollama
       CALC_OZM_APP_OLLAMA_URL: http://host.docker.internal:11434
     depends_on:
-      postgres:
+      ozm-postgres:
         condition: service_healthy
-      migrate:
+      ozm-migrate:
         condition: service_completed_successfully
     restart: unless-stopped
     tmpfs:
@@ -52,22 +58,22 @@ services:
       timeout: 3s
       retries: 10
 
-  frontend:
+  ozm-web:
     build:
       context: ./frontend
       dockerfile: Dockerfile
     ports:
       - "127.0.0.1:5173:8080"
-    # nginx проксирует /ocr/ -> ocr:8000 (имя резолвится на каждом запросе,
+    # nginx проксирует /ocr/ -> ozm-ocr:8000 (имя резолвится на каждом запросе,
     # поэтому UI поднимается и без OCR — тогда /ocr/ отдаёт 502)
     depends_on:
-      ozm-backend:
+      ozm-api:
         condition: service_healthy
     restart: unless-stopped
 
   # Распознавание таблиц ИД (python, ../ocr). Порт 8000 наружу — для vite
   # dev-сервера (proxy /ocr -> localhost:8000) и ручных проверок API.
-  ocr:
+  ozm-ocr:
     build:
       context: ./ocr
       dockerfile: Dockerfile
@@ -94,7 +100,7 @@ services:
       OCRPDF_TEMPLATE_DISK_MB: ${OCRPDF_TEMPLATE_DISK_MB:-512}
     restart: unless-stopped
 
-  postgres:
+  ozm-postgres:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: ozm

@@ -11,7 +11,7 @@
 | `infra/` | нормативная поставка: compose стенда, контуры, приёмка `tests/run.sh`, cloud-init |
 | `docs/` | продуктовые/API спеки |
 
-Slug: **ozm**. Env: **`CALC_OZM_*`**. Сервис: **`ozm-backend`**. DB: **`ozm`**.
+Slug: **ozm**. БД/рантайм — канонические имена нормы (`PGHOST`, `PGUSER`, `HTTP_ADDR`, `LOG_LEVEL`, `CORS_ALLOWED_ORIGINS`), свои настройки продукта — `CALC_OZM_APP_*`. Сервисы: **`ozm-api`**, **`ozm-web`**, **`ozm-ocr`**, **`ozm-postgres`**. DB: **`ozm`**.
 
 Источники: calc ← `ozm-calc`, OCR ← `firefight/New project`, каркас ← `blind-area-calc`.
 

@@ -65,7 +65,7 @@ docker compose -f docker-compose.test.yml up -d
 ## OCR: кнопка «Распознать таблицу ИД»
 
 `/recognize` встраивает во фрейм OCR-сервис `ocrpdf` (папка `ocr/`, контейнер
-`ocr` в compose, порт 8000). nginx фронта проксирует `/ocr/` -> `ocr:8000/` и шлёт
+`ozm-ocr` в compose, порт 8000). nginx фронта проксирует `/ocr/` -> `ozm-ocr:8000/` и шлёт
 `X-Forwarded-Prefix: /ocr`, vite dev-сервер делает то же для `/ocr` (на
 `localhost:8000`, порт опубликован из контейнера). Адрес можно переопределить
 сборочной переменной `VITE_OCR_URL`.
@@ -114,4 +114,8 @@ TnCheckbox, TnTumbler, TnCard, TnTag, TnIcon), блоки калькулятор
 
 ## Env
 
-См. [`.env.example`](.env.example). Prefix: `CALC_OZM_*`.
+См. [`.env.example`](.env.example). Подключение к БД и рантайм-настройки названы
+каноническими именами корпоративного шаблона (`PGHOST`, `PGPORT`, `PGDATABASE`,
+`PGUSER`, `PGPASSWORD`, `PGSSLMODE`, `HTTP_ADDR`, `LOG_LEVEL`, `CORS_ALLOWED_ORIGINS`)
+— теми же, что несут контуры `infra/env.<контур>/.env.*`. Свои настройки продукта
+(распознавание, провайдер зрения, выгрузки) — под префиксом `CALC_OZM_APP_*`.

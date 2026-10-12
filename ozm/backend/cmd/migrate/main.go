@@ -11,7 +11,10 @@ import (
 )
 
 func main() {
-	pg, err := envconfig.LoadDatabaseOnly()
+	// Роль владельца схемы, если контур её задал (PG_MIGRATE_USER): на stage и
+	// prod рантайм-роль PGUSER не должна владеть схемой (решение D3 набора,
+	// проверка [9/9] у infra/tests/check-env.sh).
+	pg, err := envconfig.LoadMigrationDatabase()
 	if err != nil {
 		log.Fatal(err)
 	}

@@ -14,8 +14,8 @@ server {
   client_max_body_size 100m;
 
   resolver 127.0.0.11 valid=10s ipv6=off;
-  set $ozm_backend http://ozm-backend:8080;
-  set $ozm_ocr http://ocr:8000;
+  set $ozm_backend http://ozm-api:8080;
+  set $ozm_ocr http://ozm-ocr:8000;
 
   auth_basic "OZM calculator";  # латиница: кириллицу в realm браузеры показывают кашей
   auth_basic_user_file /etc/nginx/.htpasswd;

@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 # OCR-сервис ocrpdf: страница и API распознавания таблиц ИД (порт 8000).
-# nginx фронтенда ОЗМ проксирует /ocr/ -> ocr:8000/ (см. frontend/nginx.conf).
+# nginx фронтенда ОЗМ проксирует /ocr/ -> ozm-ocr:8000/ (см. frontend/nginx.conf).
 # Прокси сборки: пусто — прямой доступ, иначе хост:порт (норма §2.1)
 ARG DOCKER_PROXY_HOST_1=
 FROM ${DOCKER_PROXY_HOST_1}python:3.12-slim

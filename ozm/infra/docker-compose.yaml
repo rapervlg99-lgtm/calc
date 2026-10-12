@@ -2,8 +2,14 @@
 # container_name совпадает с именем сервиса, мониторинг не поднимается как сервис
 # (§1.8 — OTel-коллектор отдельно, конфиги в infra/env.<контур>/otel/).
 #
-# Контуры: COMPOSE_PROFILES=local docker compose -f infra/docker-compose.yaml config -q
-# Значения — из infra/env.<контур>/.env.*; локальный стенд см. dev/docker-compose.local.yml
+# Имена сервисов — те же, что в контурах инфраструктуры: PGHOST=ozm-postgres
+# (env.<контур>/.env.pg) резолвится в сервис ozm-postgres, OTEL_EXPORTER_OTLP_ENDPOINT
+# смотрит на ozm-otel, nginx фронта — на ozm-api и ozm-ocr. Переименование сервиса
+# без правки контура ломает стенд молча, на первом же соединении.
+#
+# Контуры: ENV_DIR=env.stage docker compose -f infra/docker-compose.yaml config -q
+# Значения — из infra/env.<контур>/.env.*; локальный стенд разработчика см.
+# dev/docker-compose.local.yml (порты 5173/8080/8000 на 127.0.0.1).
 name: ozm
 
 x-limits: &limits-small
@@ -12,16 +18,25 @@ x-limits: &limits-small
     reservations: { cpus: "0.10", memory: 128M }
 
 services:
-  postgres:
+  ozm-postgres:
     image: postgres:16-alpine
-    container_name: postgres
+    container_name: ozm-postgres
     restart: unless-stopped
     env_file:
-      - ./env.local/.env.pg
+      - ${ENV_DIR:-env.local}/.env.pg
+    # Контейнер postgres читает POSTGRES_*, а контур несёт канонические PG*:
+    # владельцем схемы становится роль миграций (PG_MIGRATE_*), рантайм-роль
+    # заводит init-roles.sql. Значения приходят интерполяцией — то есть через
+    # окружение процесса compose (--env-file, см. шапку), а не через env_file.
+    environment:
+      POSTGRES_USER: ${PG_MIGRATE_USER:-ozm}
+      POSTGRES_PASSWORD: ${PG_MIGRATE_PASSWORD:-ozm}
+      POSTGRES_DB: ${PGDATABASE:-ozm}
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./env.local/postgres/init.sql:/docker-entrypoint-initdb.d/10-init.sql:ro
-      - ./env.local/postgres/init-roles.sql:/docker-entrypoint-initdb.d/20-roles.sql:ro
+      # init-скрипты — принадлежность локального стенда (на контуре БД managed),
+      # поэтому путь не следует за ENV_DIR: так же устроен бланк нормы.
+      - ./env.local/postgres:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-ozm} -d $${POSTGRES_DB:-ozm}"]
       interval: 5s
@@ -29,23 +44,23 @@ services:
       retries: 12
     deploy: *limits-small
 
-  migrate:
+  ozm-migrate:
     build:
       context: ../backend
       dockerfile: Dockerfile
     image: ozm-backend:local
-    container_name: migrate
+    container_name: ozm-migrate
     entrypoint: ["/app/ozm-migrate"]
     restart: "no"
     env_file:
-      - ./env.local/.env.app
-      - ./env.local/.env.pg
+      - ${ENV_DIR:-env.local}/.env.app
+      - ${ENV_DIR:-env.local}/.env.pg
     environment:
       DICTS_BASELINE_DIR: /config/dicts
     volumes:
       - ../backend/dicts:/config/dicts:ro
     depends_on:
-      postgres:
+      ozm-postgres:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "true"]
@@ -54,22 +69,25 @@ services:
       retries: 3
     deploy: *limits-small
 
-  ozm-backend:
+  ozm-api:
     image: ozm-backend:local
-    container_name: ozm-backend
+    container_name: ozm-api
     restart: unless-stopped
     env_file:
-      - ./env.local/.env.app
-      - ./env.local/.env.pg
-      - ./env.local/.env.otel
+      - ${ENV_DIR:-env.local}/.env.app
+      - ${ENV_DIR:-env.local}/.env.pg
+      - ${ENV_DIR:-env.local}/.env.otel
+    # Порт публикуется наружу только на время, пока в стенде нет прокси: по норме
+    # вход один — web (:8080), а API смотрит в сеть compose (traefik пока не поднят,
+    # см. README, «Состояние»).
     ports:
       - "127.0.0.1:8080:8080"
     tmpfs:
       - /tmp
     depends_on:
-      postgres:
+      ozm-postgres:
         condition: service_healthy
-      migrate:
+      ozm-migrate:
         condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "/app/ozm-server", "-healthcheck"]
@@ -81,17 +99,17 @@ services:
         limits: { cpus: "1.00", memory: 1G }
         reservations: { cpus: "0.20", memory: 256M }
 
-  frontend:
+  ozm-web:
     build:
       context: ../frontend
       dockerfile: Dockerfile
     image: ozm-frontend:local
-    container_name: frontend
+    container_name: ozm-web
     restart: unless-stopped
     ports:
       - "127.0.0.1:5173:8080"
     depends_on:
-      ozm-backend:
+      ozm-api:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/ >/dev/null || exit 1"]
@@ -100,17 +118,17 @@ services:
       retries: 6
     deploy: *limits-small
 
-  ocr:
+  ozm-ocr:
     build:
       context: ../ocr
       dockerfile: Dockerfile
     image: ozm-ocr:local
-    container_name: ocr
+    container_name: ozm-ocr
     restart: unless-stopped
     ports:
       - "127.0.0.1:8000:8000"
     depends_on:
-      - ozm-backend
+      - ozm-api
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/capabilities', timeout=5).status==200 else 1)\""]
       interval: 15s

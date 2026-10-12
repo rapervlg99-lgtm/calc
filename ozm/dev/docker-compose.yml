@@ -2,43 +2,51 @@
 # docker-compose.local.yml. Перед up: cp deploy/env.prod.example .env, заполнить
 # POSTGRES_PASSWORD и API_TOKEN, создать deploy/htpasswd — см. docs/deploy.md.
 # Пути к исходникам — через ../ : на сервере junction-ов dev/backend и т.п. нет.
+#
+# Имена сервисов — как в контурах поставки infra/env.<контур>/.env.*: PGHOST
+# контура ссылается на ozm-postgres, nginx фронта — на ozm-api и ozm-ocr.
 
 services:
-  migrate:
+  ozm-migrate:
     build:
       context: ../backend
       dockerfile: Dockerfile
     image: ozm-backend
     entrypoint: ["/app/ozm-migrate"]
     environment:
-      CALC_OZM_PG_ADDR: ${CALC_OZM_PG_ADDR:-postgres:5432}
-      CALC_OZM_PG_USER: ${CALC_OZM_PG_USER:-${POSTGRES_USER:-ozm}}
-      CALC_OZM_PG_PASSWORD: ${CALC_OZM_PG_PASSWORD:-${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required — set it in .env (see deploy/env.prod.example)}}
-      CALC_OZM_PG_DATABASE: ${CALC_OZM_PG_DATABASE:-${POSTGRES_DB:-ozm}}
-      CALC_OZM_PG_TLS_MODE: ${CALC_OZM_PG_TLS_MODE:-disable}
+      PGHOST: ${PGHOST:-ozm-postgres}
+      PGPORT: ${PGPORT:-5432}
+      PGUSER: ${PGUSER:-${POSTGRES_USER:-ozm}}
+      PGPASSWORD: ${PGPASSWORD:-${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required — set it in .env (see deploy/env.prod.example)}}
+      PGDATABASE: ${PGDATABASE:-${POSTGRES_DB:-ozm}}
+      PGSSLMODE: ${PGSSLMODE:-disable}
+      # Владелец схемы: если контур его задал, миграции идут под ним (решение D3).
+      PG_MIGRATE_USER: ${PG_MIGRATE_USER:-}
+      PG_MIGRATE_PASSWORD: ${PG_MIGRATE_PASSWORD:-}
       DICTS_BASELINE_DIR: /config/dicts
     volumes:
       - ../backend/dicts:/config/dicts:ro
     depends_on:
-      postgres:
+      ozm-postgres:
         condition: service_healthy
     restart: "no"
 
-  ozm-backend:
+  ozm-api:
     image: ozm-backend
     expose:
       - "8080"
     environment:
       CALC_OZM_APP_ADMIN_TOKEN: ${CALC_OZM_APP_ADMIN_TOKEN:-}
-      CALC_OZM_APP_ALLOWED_ORIGINS: ${CALC_OZM_APP_ALLOWED_ORIGINS:-}
-      CALC_OZM_APP_LOG_LEVEL: ${CALC_OZM_APP_LOG_LEVEL:-info}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
       CALC_OZM_APP_ENABLE_METRICS: ${CALC_OZM_APP_ENABLE_METRICS:-false}
       CALC_OZM_APP_ENABLE_API_DOCS: ${CALC_OZM_APP_ENABLE_API_DOCS:-false}
-      CALC_OZM_PG_ADDR: ${CALC_OZM_PG_ADDR:-postgres:5432}
-      CALC_OZM_PG_USER: ${CALC_OZM_PG_USER:-${POSTGRES_USER:-ozm}}
-      CALC_OZM_PG_PASSWORD: ${CALC_OZM_PG_PASSWORD:-${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required — set it in .env (see deploy/env.prod.example)}}
-      CALC_OZM_PG_DATABASE: ${CALC_OZM_PG_DATABASE:-${POSTGRES_DB:-ozm}}
-      CALC_OZM_PG_TLS_MODE: ${CALC_OZM_PG_TLS_MODE:-disable}
+      PGHOST: ${PGHOST:-ozm-postgres}
+      PGPORT: ${PGPORT:-5432}
+      PGUSER: ${PGUSER:-${POSTGRES_USER:-ozm}}
+      PGPASSWORD: ${PGPASSWORD:-${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required — set it in .env (see deploy/env.prod.example)}}
+      PGDATABASE: ${PGDATABASE:-${POSTGRES_DB:-ozm}}
+      PGSSLMODE: ${PGSSLMODE:-disable}
       # /api/v1/ext (импорт распознанных таблиц, справочник масс) нужен для OCR
       CALC_OZM_APP_OCR_ENABLED: ${CALC_OZM_APP_OCR_ENABLED:-true}
       # Собственной аутентификации пока нет (OIDC — TODO): бэкенд доступен только
@@ -46,9 +54,9 @@ services:
       CALC_OZM_APP_AUTH_DEV_MODE: ${CALC_OZM_APP_AUTH_DEV_MODE:-true}
       CALC_OZM_APP_STORAGE_DIR: ${CALC_OZM_APP_STORAGE_DIR:-/tmp/ozm-blobs}
     depends_on:
-      postgres:
+      ozm-postgres:
         condition: service_healthy
-      migrate:
+      ozm-migrate:
         condition: service_completed_successfully
     restart: unless-stopped
     mem_limit: 1g
@@ -61,7 +69,7 @@ services:
       retries: 5
       start_period: 30s
 
-  postgres:
+  ozm-postgres:
     image: postgres:16-alpine
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-ozm}
@@ -77,7 +85,7 @@ services:
       timeout: 3s
       retries: 10
 
-  frontend:
+  ozm-web:
     build:
       context: ../frontend
       dockerfile: Dockerfile
@@ -96,13 +104,13 @@ services:
     restart: unless-stopped
     mem_limit: 128m
     depends_on:
-      ozm-backend:
+      ozm-api:
         condition: service_healthy
 
   # OCR таблиц ИД (страница и API под /ocr/ через nginx фронтенда).
   # Шрифты для шаблонов глифов: *.ttf (ISOCPEUR, GOST) в каталоге OCR_FONTS_DIR;
   # без них работают только Liberation/DejaVu и качество на чертёжных листах ниже.
-  ocr:
+  ozm-ocr:
     build:
       context: ../ocr
       dockerfile: Dockerfile
@@ -142,7 +150,7 @@ services:
       - caddy-data:/data
       - caddy-config:/config
     depends_on:
-      - frontend
+      - ozm-web
     restart: unless-stopped
 
 volumes:
