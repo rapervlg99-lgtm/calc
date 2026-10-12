@@ -68,9 +68,9 @@ ENV_SECRET_DIRS=(
 # печатая WARN с именем; в strict такой файл — FAIL. Завели третий образ —
 # допишите его сюда, чтобы список совпадал с security.yaml.
 DOCKERFILES=(
-  "${REPO_ROOT}/backend/Dockerfile
-  ocr/Dockerfile"
+  "${REPO_ROOT}/backend/Dockerfile"
   "${REPO_ROOT}/frontend/Dockerfile"
+  "${REPO_ROOT}/ocr/Dockerfile"
 )
 
 # Что автообнаружение Dockerfile не смотрит. К каталогам из NAME_SCAN_EXCLUDES

@@ -238,6 +238,15 @@ jobs:
           format: sarif
           output-file: hadolint-web.sarif
 
+      - name: hadolint ocr/Dockerfile
+        uses: hadolint/hadolint-action@v3.1.0  # pin: v3.1.0 → зафиксировать SHA при первом прогоне: git ls-remote
+        if: always()
+        with:
+          dockerfile: ocr/Dockerfile
+          config: .hadolint.yaml
+          format: sarif
+          output-file: hadolint-ocr.sarif
+
       - name: Upload hadolint SARIF (api)
         uses: github/codeql-action/upload-sarif@v3.37.9  # pin: v3.37.9 → зафиксировать SHA при первом прогоне: git ls-remote
         if: always()
@@ -251,6 +260,13 @@ jobs:
         with:
           sarif_file: hadolint-web.sarif
           category: hadolint-web
+
+      - name: Upload hadolint SARIF (ocr)
+        uses: github/codeql-action/upload-sarif@v3.37.9  # pin: v3.37.9 → зафиксировать SHA при первом прогоне: git ls-remote
+        if: always()
+        with:
+          sarif_file: hadolint-ocr.sarif
+          category: hadolint-ocr
 
   iac:
     name: IaC scan (trivy config)
