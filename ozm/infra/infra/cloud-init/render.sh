@@ -20,14 +20,14 @@
 # | Ситуация                                                        | Что делает скрипт                             | exit |
 # |-----------------------------------------------------------------|-----------------------------------------------|------|
 # | плейсхолдеров в выводе нет                                      | пишет файл, печатает «Готово»                 | 0    |
-# | REPLACE_WITH_* или <service> в выводе, любая цель               | ERROR со списком строк, выходной файл УДАЛЁН  | 1    |
+# | REPLACE_WITH_* или ozm в выводе, любая цель               | ERROR со списком строк, выходной файл УДАЛЁН  | 1    |
 # | то же при --allow-placeholders и DEPLOYMENT_TARGET=local        | WARN со списком строк, файл остаётся          | 0    |
 # | --allow-placeholders при DEPLOYMENT_TARGET≠local (yc-stage/prod) | ERROR до рендера: флаг не действует           | 1    |
 # | вывод не разбирается как YAML (есть python3 с PyYAML)           | ERROR, файл удалён                            | 1    |
 # | обязательная переменная target'а пуста или env не прочитался   | ERROR до рендера                              | 1    |
 # | значение переменной target'а содержит перевод строки            | ERROR до рендера: инъекция YAML               | 1    |
 # Почему файл удаляется: user-data с плейсхолдером клонирует репозиторий по
-# адресу REPLACE_WITH_GIT_REPO_URL и кладёт cron.d с именем <service>; оставить
+# адресу REPLACE_WITH_GIT_REPO_URL и кладёт cron.d с именем ozm; оставить
 # его рядом со скриптом — дать следующему шагу подхватить брак.
 # Зачем флаг локальным площадкам (libvirt, vagrant — у них DEPLOYMENT_TARGET=local):
 # у них в targets/*.env остаются плейсхолдеры адреса репозитория и ключа
@@ -73,7 +73,7 @@ indent() { sed 's/^/    /'; }
 usage() {
   echo "Usage: $0 [--allow-placeholders] <target> [output-file]"
   echo "Targets: $(find "${TARGETS_DIR}" -name '*.env' -exec basename {} .env \; | sort | tr '\n' ' ')"
-  echo "  --allow-placeholders  оставить REPLACE_WITH_* и <service> в выводе как WARN;"
+  echo "  --allow-placeholders  оставить REPLACE_WITH_* и ozm в выводе как WARN;"
   echo "                        только для DEPLOYMENT_TARGET=local (libvirt, vagrant)"
   exit "${1:-1}"
 }
@@ -191,7 +191,7 @@ envsubst "${SUBST_VARS}" < "${TMPL}" > "${OUTPUT}"
 # Плейсхолдеры, до которых не дошли руки эксплуатации, ловим здесь, а не в
 # логе cloud-init на ВМ: REPLACE_WITH_* — из targets/*.env (в самом шаблоне
 # литеральных плейсхолдеров нет, всё приходит подстановкой);
-# <service> — имя сервиса, которое
+# ozm — имя сервиса, которое
 # подставляется руками при заводке репозитория и незамеченным уезжает в
 # путь cron.d и имя лога. Комментарии пропускаем — там имена стоят в инструкциях.
 # Маркер имени сервиса собран из двух строк намеренно: scaffold.sh заменяет

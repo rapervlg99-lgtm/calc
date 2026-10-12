@@ -8,7 +8,7 @@
 | `ocr/` | Python-сервис `ocrpdf`: распознавание таблиц ИД из PDF (страница и API под `/ocr/`) |
 | `frontend/` | Vue 3 SPA |
 | `dev/` | compose local/test/prod-like, smoke, junctions → backend/frontend |
-| `infra/` | stub stage/prod (Phase 5) |
+| `infra/` | нормативная поставка: compose стенда, контуры, приёмка `tests/run.sh`, cloud-init |
 | `docs/` | продуктовые/API спеки |
 
 Slug: **ozm**. Env: **`CALC_OZM_*`**. Сервис: **`ozm-backend`**. DB: **`ozm`**.

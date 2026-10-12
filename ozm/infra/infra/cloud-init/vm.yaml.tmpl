@@ -1,7 +1,7 @@
 #cloud-config
 # Шаблон скилла tnlife-miniapp-engineering: единый cloud-init ВМ продукта.
 # Норма — 01-corp-standard.md, «cloud-init».
-# Подставьте <service> — имя сервиса латиницей, то же, что в compose.
+# Подставьте ozm — имя сервиса латиницей, то же, что в compose.
 #
 # КУДА КЛАСТЬ: infra/infra/cloud-init/vm.yaml.tmpl. Удвоение infra — не опечатка:
 # корп-шаблон (§2.5) задаёт путь infra/cloud-init/ от корня СВОЕГО репозитория,
@@ -257,9 +257,9 @@ write_files:
       # именно этот тег, а не дефолтный local из Makefile.
       make -C infra up ENV_DIR="env.${DEPLOYMENT_TARGET}" IMAGE_TAG="${IMAGE_TAG}"
 
-  - path: /etc/cron.d/<service>-startup
+  - path: /etc/cron.d/ozm-startup
     content: |
-      @reboot prj /home/prj/up-app.sh >> /var/log/<service>-startup.log 2>&1
+      @reboot prj /home/prj/up-app.sh >> /var/log/ozm-startup.log 2>&1
 
 runcmd:
   - bash /home/prj/install-docker.sh
@@ -269,5 +269,5 @@ runcmd:
   - systemctl restart cron
 
 final_message: |
-  cloud-init <service>-api завершён за $UPTIME секунд.
+  cloud-init ozm-api завершён за $UPTIME секунд.
   Target: ${DEPLOYMENT_TARGET}
