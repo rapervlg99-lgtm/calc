@@ -78,6 +78,9 @@ func main() {
 		AllowedOrigins: origins,
 		EnableAPIDocs:  cfgEnv.EnableAPIDocs,
 		LogPerf:        cfgEnv.LogPerf,
+		// /readyz: сервис готов, когда отвечает БД (норма: 200 только при
+		// доступной зависимости, иначе 503 — по этой пробе решает балансировщик).
+		Ready: pool.Pool.Ping,
 	}).WithPersistence(api.Persistence{
 		Calculations: pgstore.NewCalculationStore(pool.Pool),
 		Exports:      pgstore.NewExportStore(pool.Pool),

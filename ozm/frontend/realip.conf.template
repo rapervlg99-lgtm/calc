@@ -1,0 +1,21 @@
+# Доверенный прокси для realip nginx. Кладётся в образ как
+# /etc/nginx/templates/realip.conf.template: entrypoint образа nginx подставляет
+# в него ${TRUSTED_PROXY_CIDR} (envsubst по фильтру NGINX_ENVSUBST_FILTER) и
+# рендерит результат в /etc/nginx/conf.d/realip.conf, который главный nginx.conf
+# включает строкой `include /etc/nginx/conf.d/*.conf;`.
+#
+# Почему переменная, а не значение в конфиге: образ web один на все контуры, а
+# доверенный прокси у каждого свой — локально traefik в сети compose, на контуре
+# балансировщик. Доверять широким диапазонам (10.0.0.0/8, 172.16.0.0/12,
+# 192.168.0.0/16) запрещено: X-Forwarded-For подставит любой узел сети, и в логе
+# окажется чужой адрес.
+#
+# Значение — одна сеть в CIDR-нотации: локально подсеть сети compose
+# (см. infra/env.local/README.md), на контуре REPLACE_WITH_LB_CIDR из
+# env.<контур>/.env.app. Плейсхолдер или пустое значение роняют `nginx -t` при
+# старте контейнера — это намеренно. Дефолт образа (ENV в Dockerfile) —
+# 127.0.0.1/32, то есть «никому не верить».
+
+set_real_ip_from ${TRUSTED_PROXY_CIDR};
+real_ip_header X-Forwarded-For;
+real_ip_recursive on;

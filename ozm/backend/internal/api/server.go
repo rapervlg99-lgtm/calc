@@ -38,6 +38,10 @@ type Options struct {
 	AllowedOrigins []string
 	EnableAPIDocs  bool
 	LogPerf        bool
+	// Ready — проверка готовности сервиса для /readyz (норма: 200 только когда
+	// зависимость действительно доступна). nil — сервис считается готовым, как
+	// только поднялся процесс.
+	Ready func(context.Context) error
 }
 
 type Server struct {
@@ -81,6 +85,7 @@ func (s *Server) Router() http.Handler {
 	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
+	r.Get("/readyz", s.handleReady)
 
 	if s.ogzApp != nil && s.ogzApp.Metrics != nil {
 		r.Handle("/metrics", s.ogzApp.Metrics.Handler())
@@ -98,6 +103,24 @@ func (s *Server) Router() http.Handler {
 		}
 	})
 	return r
+}
+
+// handleReady — готовность сервиса: /healthz отвечает за живой процесс, /readyz
+// за доступность зависимостей. Пробу дёргают приёмка нормы (smoke: /readyz у
+// ${SERVICE}-api) и балансировщик, поэтому недоступная БД — это 503, а не 200.
+func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
+	if s.opts.Ready == nil {
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+	defer cancel()
+	if err := s.opts.Ready(ctx); err != nil {
+		slog.Warn("readyz: база недоступна", slog.Any("err", err))
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "not ready", "error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
 }
 
 func (s *Server) cors(next http.Handler) http.Handler {

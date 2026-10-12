@@ -42,5 +42,16 @@ RUN addgroup -g 10001 -S appgroup \
 COPY --chown=appuser:appgroup nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build --chown=appuser:appgroup /app/dist /usr/share/nginx/html
 
+# realip (норма §2.5): шаблон доверенного прокси entrypoint образа рендерит в
+# /etc/nginx/conf.d/realip.conf при каждом старте контейнера. envsubst трогает
+# ТОЛЬКО перечисленные в фильтре переменные: остальное окружение контейнера в
+# конфиг не попадает, а прод-контур разворачивает фильтр до API_TOKEN — им
+# подставляется его собственный server из /etc/nginx/templates (dev/docker-compose.yml).
+# Дефолт TRUSTED_PROXY_CIDR — «никому не верить»: без переменной клиентским
+# адресом остаётся адрес прокси, подмена X-Forwarded-For невозможна.
+COPY --chown=appuser:appgroup realip.conf.template /etc/nginx/templates/realip.conf.template
+ENV NGINX_ENVSUBST_FILTER="^(TRUSTED_PROXY_CIDR|API_TOKEN)$" \
+    TRUSTED_PROXY_CIDR="127.0.0.1/32"
+
 USER 10001:10001
 EXPOSE 8080

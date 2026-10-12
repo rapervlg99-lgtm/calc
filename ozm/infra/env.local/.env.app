@@ -38,7 +38,7 @@ SHUTDOWN_TIMEOUT=15s
 
 # Секрет подписи сессионной cookie, минимум 32 байта: openssl rand -base64 48.
 # Вне local пустое значение — отказ старта, а не молчаливый дефолт.
-SESSION_SECRET=REPLACE_WITH_SESSION_SECRET
+SESSION_SECRET=ozm_local_session_secret_not_for_production_32b
 # Ротация без разлогина всех: новый ключ — в SESSION_SECRET, прежний — сюда на
 # один SESSION_TTL (старые сессии ещё принимаются), затем строку закомментировать.
 # SESSION_SECRET_PREVIOUS=REPLACE_WITH_SESSION_SECRET_PREVIOUS
@@ -99,7 +99,7 @@ PDN_RETENTION_DAYS=30
 
 # Ключ шифрования колонок AES-256-GCM (06-data-privacy.md §9): base64 ровно
 # от 32 байт — openssl rand -base64 32. Вне local пустое значение — отказ старта.
-ENCRYPTION_KEY=REPLACE_WITH_ENCRYPTION_KEY
+ENCRYPTION_KEY=ozm_local_encryption_key_not_for_prod_32b0
 # Ротация ключа: новый — в ENCRYPTION_KEY, прежний — сюда на время
 # перешифровки данных скриптом, затем строку закомментировать.
 # ENCRYPTION_KEY_PREVIOUS=REPLACE_WITH_ENCRYPTION_KEY_PREVIOUS
@@ -142,7 +142,7 @@ CORS_ALLOWED_ORIGINS=https://app.localhost
 #   --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}'` после первого `up`
 # (шаг 5 в env.local/README.md). Пока не заполнено, работает дефолт образа
 # 127.0.0.1/32 — realip выключен, и локально это безвредно.
-TRUSTED_PROXY_CIDR=REPLACE_WITH_COMPOSE_SUBNET
+TRUSTED_PROXY_CIDR=172.22.0.0/16
 
 # ── Продукт OZM (класс 2 нормы) ──────────────────────────────────────────────
 # Настройки, которых нет в корпоративной норме: распознавание таблиц ИД и
@@ -158,4 +158,7 @@ CALC_OZM_APP_VISION_PROVIDER=ollama
 CALC_OZM_APP_OLLAMA_URL=http://host.docker.internal:11434
 CALC_OZM_APP_OLLAMA_MODEL=qwen3.5:9b
 CALC_OZM_APP_ADMIN_TOKEN=
+# /metrics на порту API (METRICS_ADDR отдельным портом продукт пока не поднимает):
+# его скрейпит коллектор ozm-otel изнутри сети, наружу порт не публикуется.
+CALC_OZM_APP_ENABLE_METRICS=true
 

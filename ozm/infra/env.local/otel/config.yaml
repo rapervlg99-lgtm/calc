@@ -35,14 +35,16 @@ receivers:
         endpoint: 0.0.0.0:4317
       http:
         endpoint: 0.0.0.0:4318
-  # Скрейп /metrics приложения (решение D5, 08 §9): бэкенд отдаёт метрики на
-  # отдельном порту METRICS_ADDR=:9090, который compose держит только в expose
-  # (внутри сети, наружу не публикуется), а коллектор ходит к нему по имени
-  # сервиса. job_name — контракт с alerts.yaml (лейбл job="ozm", в том
-  # числе up{job} у BackendDown) и с 08 §4: переименовали — правьте оба файла
-  # одним PR. Ресивер prometheus есть только в дистрибутиве
-  # otel/opentelemetry-collector-contrib (образ в docker-compose.yaml); в core
-  # его нет. Чтение docker-логов (receiver filelog) — то же место, если нужно.
+  # Скрейп /metrics приложения (решение D5, 08 §9). ОТСТУПЛЕНИЕ OZM: в бланке
+  # нормы метрики живут на отдельном порту METRICS_ADDR=:9090, который compose
+  # держит только в expose; наш бэкенд пока отдаёт /metrics на порту API
+  # (CALC_OZM_APP_ENABLE_METRICS=true, HTTP_ADDR=:8080), и порт тоже не
+  # публикуется наружу — его видит только сеть compose. Появится METRICS_ADDR —
+  # цель возвращается на ozm-api:9090 и правится вместе с compose.
+  # job_name — контракт с alerts.yaml (лейбл job="ozm", в том числе up{job} у
+  # BackendDown) и с 08 §4: переименовали — правьте оба файла одним PR. Ресивер
+  # prometheus есть только в дистрибутиве otel/opentelemetry-collector-contrib
+  # (образ в docker-compose.yaml); в core его нет.
   prometheus:
     config:
       scrape_configs:
@@ -57,7 +59,7 @@ receivers:
           honor_labels: true
           scrape_interval: 15s
           static_configs:
-            - targets: ["ozm-api:9090"]
+            - targets: ["ozm-api:8080"]
 
 processors:
   batch:

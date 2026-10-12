@@ -96,8 +96,13 @@ services:
       - "${HOST_PORT:-80}:8080"
     environment:
       API_TOKEN: ${API_TOKEN}
-      # entrypoint nginx подставляет в шаблон только эту переменную
-      NGINX_ENVSUBST_FILTER: ^API_TOKEN$$
+      # Доверенная сеть прокси для realip: на сервере за nginx стоит Caddy или
+      # балансировщик. По умолчанию «никому не верить» — тогда X-Forwarded-For
+      # не принимается и клиентским адресом остаётся адрес прокси.
+      TRUSTED_PROXY_CIDR: ${TRUSTED_PROXY_CIDR:-127.0.0.1/32}
+      # entrypoint nginx подставляет в шаблоны только эти переменные: default.conf
+      # прод-контура (API_TOKEN) и realip.conf (TRUSTED_PROXY_CIDR)
+      NGINX_ENVSUBST_FILTER: ^(TRUSTED_PROXY_CIDR|API_TOKEN)$$
     volumes:
       - ./deploy/nginx.prod.conf.template:/etc/nginx/templates/default.conf.template:ro
       - ./deploy/htpasswd:/etc/nginx/.htpasswd:ro

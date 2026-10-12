@@ -28,6 +28,15 @@ dev/results/
 # сопровождения справочника, в репозитории им делать нечего.
 *.bak
 
+# Ключи и сертификаты локального стенда: local.crt/local.key генерирует первый
+# `make -C infra up` (шаг up Makefile набора). Корневой сертификат managed PG
+# (env.<контур>/certs/pg-root.crt) — публичный, он в репозитории и под *.pem
+# не попадает.
+infra/env.local/traefik/certs/local.crt
+infra/env.local/traefik/certs/local.key
+*.key
+*.pem
+
 # Настройки агентов и редакторов — локальные
 .claude/
 .cursor/
