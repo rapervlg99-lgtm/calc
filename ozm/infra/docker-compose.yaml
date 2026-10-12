@@ -14,7 +14,7 @@ x-limits: &limits-small
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: ozm-postgres
+    container_name: postgres
     restart: unless-stopped
     env_file:
       - ./env.local/.env.pg
@@ -34,7 +34,7 @@ services:
       context: ../backend
       dockerfile: Dockerfile
     image: ozm-backend:local
-    container_name: ozm-migrate
+    container_name: migrate
     entrypoint: ["/app/ozm-migrate"]
     restart: "no"
     env_file:
@@ -86,7 +86,7 @@ services:
       context: ../frontend
       dockerfile: Dockerfile
     image: ozm-frontend:local
-    container_name: ozm-frontend
+    container_name: frontend
     restart: unless-stopped
     ports:
       - "127.0.0.1:5173:8080"
@@ -105,7 +105,7 @@ services:
       context: ../ocr
       dockerfile: Dockerfile
     image: ozm-ocr:local
-    container_name: ozm-ocr
+    container_name: ocr
     restart: unless-stopped
     ports:
       - "127.0.0.1:8000:8000"
