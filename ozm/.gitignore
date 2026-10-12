@@ -4,6 +4,14 @@ Thumbs.db
 .env
 .env.*
 !.env.example
+# Контуры поставки — часть нормы, а не личные переопределения: их читают
+# infra/docker-compose.yaml, проверки [3/15] и [8/15] и tests/check-env.sh.
+# В stage и prod в них только плейсхолдеры REPLACE_WITH_* (их и ловит
+# .gitleaks.toml); личные значения разработчика лежат в dev/.env — он остаётся
+# игнорируемым.
+!infra/env.local/.env.*
+!infra/env.stage/.env.*
+!infra/env.prod/.env.*
 node_modules/
 frontend/dist/
 backend/bin/
@@ -16,6 +24,9 @@ tasks/
 *.exe
 dev/tmp/
 dev/results/
+# Рабочие копии словарей (roll.json.bak и подобные) — местный инструмент
+# сопровождения справочника, в репозитории им делать нечего.
+*.bak
 
 # Настройки агентов и редакторов — локальные
 .claude/
