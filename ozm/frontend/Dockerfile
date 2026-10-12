@@ -1,5 +1,7 @@
 # syntax=docker/dockerfile:1.7
-FROM node:22-alpine AS build
+# Прокси сборки: пусто — прямой доступ, иначе хост:порт (норма §2.1)
+ARG DOCKER_PROXY_HOST_1=
+FROM ${DOCKER_PROXY_HOST_1}node:22-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm install
@@ -14,7 +16,7 @@ ARG VITE_BASE_PATH=/
 ENV VITE_BASE_PATH=$VITE_BASE_PATH
 RUN npm run build
 
-FROM nginx:1.27-alpine
+FROM ${DOCKER_PROXY_HOST_1}nginx:1.27-alpine
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/dist /usr/share/nginx/html
 EXPOSE 8080

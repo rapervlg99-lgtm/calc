@@ -1,7 +1,9 @@
 # syntax=docker/dockerfile:1.7
 # OCR-сервис ocrpdf: страница и API распознавания таблиц ИД (порт 8000).
 # nginx фронтенда ОЗМ проксирует /ocr/ -> ocr:8000/ (см. frontend/nginx.conf).
-FROM python:3.12-slim
+# Прокси сборки: пусто — прямой доступ, иначе хост:порт (норма §2.1)
+ARG DOCKER_PROXY_HOST_1=
+FROM ${DOCKER_PROXY_HOST_1}python:3.12-slim
 
 ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
@@ -31,4 +33,8 @@ HEALTHCHECK --interval=15s --timeout=5s --retries=5 --start-period=30s \
 
 # --host 0.0.0.0: сервер виден только внутри сети compose; наружу порт
 # публикуется как 127.0.0.1:8000 (аутентификации у сервиса нет).
+# non-root (норма §2.2): сервису нужен записываемый каталог выгрузок
+RUN useradd --uid 10001 --user-group --create-home app \
+ && chown -R 10001:10001 /app
+USER 10001
 CMD ["python", "webapp.py", "--host", "0.0.0.0", "--port", "8000"]

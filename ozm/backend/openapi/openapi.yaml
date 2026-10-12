@@ -1,0 +1,229 @@
+# Источник контракта OZM. Сгенерирован scripts/gen-openapi.py из маршрутов
+# бэкенда (internal/**). Зеркало — docs/api/openapi.yaml, обновляется тем же
+# скриптом; правки вносите в код и перегенерируйте.
+openapi: 3.0.3
+info:
+  title: OZM API
+  version: 1.0.0
+  description: >-
+    Калькулятор огнезащиты и распознавание таблиц ИД: расчёты, задания,
+    словари проката, выгрузка. Аутентификация — заголовок Authorization
+    (dev-режим: CALC_OZM_APP_AUTH_DEV_MODE).
+servers:
+  - url: /api/v1
+    description: локальный стенд
+paths:
+  /api/v1/calc:
+    post:
+      summary: /calc
+      responses:
+        '200':
+          description: Успешный ответ
+        '400':
+          $ref: #/components/responses/Error
+        '401':
+          $ref: #/components/responses/Error
+        '500':
+          $ref: #/components/responses/Error
+  /api/v1/calc/{id}:
+    get:
+      summary: /calc/{id}
+      responses:
+        '200':
+          description: Успешный ответ
+        '400':
+          $ref: #/components/responses/Error
+        '401':
+          $ref: #/components/responses/Error
+        '500':
+          $ref: #/components/responses/Error
+  /api/v1/dicts:
+    get:
+      summary: /dicts
+      responses:
+        '200':
+          description: Успешный ответ
+        '400':
+          $ref: #/components/responses/Error
+        '401':
+          $ref: #/components/responses/Error
+        '500':
+          $ref: #/components/responses/Error
+  /api/v1/export/docx:
+    post:
+      summary: /export/docx
+      responses:
+        '200':
+          description: Успешный ответ
+        '400':
+          $ref: #/components/responses/Error
+        '401':
+          $ref: #/components/responses/Error
+        '500':
+          $ref: #/components/responses/Error
+  /api/v1/export/pdf:
+    post:
+      summary: /export/pdf
+      responses:
+        '200':
+          description: Успешный ответ
+        '400':
+          $ref: #/components/responses/Error
+        '401':
+          $ref: #/components/responses/Error
+        '500':
+          $ref: #/components/responses/Error
+  /api/v1/export/xlsx:
+    post:
+      summary: /export/xlsx
+      responses:
+        '200':
+          description: Успешный ответ
+        '400':
+          $ref: #/components/responses/Error
+        '401':
+          $ref: #/components/responses/Error
+        '500':
+          $ref: #/components/responses/Error
+  /api/v1/healthz:
+    get:
+      summary: /healthz
+      responses:
+        '200':
+          description: Успешный ответ
+        '400':
+          $ref: #/components/responses/Error
+        '401':
+          $ref: #/components/responses/Error
+        '500':
+          $ref: #/components/responses/Error
+  /ext/jobs:
+    post:
+      summary: /jobs
+      responses:
+        '200':
+          description: Успешный ответ
+        '400':
+          $ref: #/components/responses/Error
+        '401':
+          $ref: #/components/responses/Error
+        '500':
+          $ref: #/components/responses/Error
+  /ext/jobs/{id}:
+    get:
+      summary: /jobs/{id}
+      responses:
+        '200':
+          description: Успешный ответ
+        '400':
+          $ref: #/components/responses/Error
+        '401':
+          $ref: #/components/responses/Error
+        '500':
+          $ref: #/components/responses/Error
+  /ext/jobs/{id}/confirm:
+    post:
+      summary: /jobs/{id}/confirm
+      responses:
+        '200':
+          description: Успешный ответ
+        '400':
+          $ref: #/components/responses/Error
+        '401':
+          $ref: #/components/responses/Error
+        '500':
+          $ref: #/components/responses/Error
+  /ext/jobs/{id}/prefill:
+    get:
+      summary: /jobs/{id}/prefill
+      responses:
+        '200':
+          description: Успешный ответ
+        '400':
+          $ref: #/components/responses/Error
+        '401':
+          $ref: #/components/responses/Error
+        '500':
+          $ref: #/components/responses/Error
+  /ext/jobs/{id}/rows:
+    post:
+      summary: /jobs/{id}/rows
+      responses:
+        '200':
+          description: Успешный ответ
+        '400':
+          $ref: #/components/responses/Error
+        '401':
+          $ref: #/components/responses/Error
+        '500':
+          $ref: #/components/responses/Error
+  /ext/jobs/{id}/rows/{rowId}:
+    patch:
+      summary: /jobs/{id}/rows/{rowId}
+      responses:
+        '200':
+          description: Успешный ответ
+        '400':
+          $ref: #/components/responses/Error
+        '401':
+          $ref: #/components/responses/Error
+        '500':
+          $ref: #/components/responses/Error
+    delete:
+      summary: /jobs/{id}/rows/{rowId}
+      responses:
+        '200':
+          description: Успешный ответ
+        '400':
+          $ref: #/components/responses/Error
+        '401':
+          $ref: #/components/responses/Error
+        '500':
+          $ref: #/components/responses/Error
+  /ext/jobs/{id}/rows/{rowId}/copy:
+    post:
+      summary: /jobs/{id}/rows/{rowId}/copy
+      responses:
+        '200':
+          description: Успешный ответ
+        '400':
+          $ref: #/components/responses/Error
+        '401':
+          $ref: #/components/responses/Error
+        '500':
+          $ref: #/components/responses/Error
+  /ext/profiles:
+    get:
+      summary: /profiles
+      responses:
+        '200':
+          description: Успешный ответ
+        '400':
+          $ref: #/components/responses/Error
+        '401':
+          $ref: #/components/responses/Error
+        '500':
+          $ref: #/components/responses/Error
+    post:
+      summary: /profiles
+      responses:
+        '200':
+          description: Успешный ответ
+        '400':
+          $ref: #/components/responses/Error
+        '401':
+          $ref: #/components/responses/Error
+        '500':
+          $ref: #/components/responses/Error
+components:
+  responses:
+    Error:
+      description: Ошибка (единый формат)
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error]
+            properties:
+              error: { type: string }
+              details: { type: string }
