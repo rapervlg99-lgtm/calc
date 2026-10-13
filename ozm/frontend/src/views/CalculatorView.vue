@@ -330,13 +330,6 @@ const barTitle = computed(() => {
 
 <template>
   <div class="calc-page">
-    <div class="calc-header">
-      <div class="calc-subtitle">Подбор огнезащитных решений ТЕХНОНИКОЛЬ · ориентировочный расчёт по таблицам ТН и ГОСТ Р 53295</div>
-      <div style="display: flex; gap: 8px">
-        <TnTag inline icon="fire">ОЗМ · ОЗБ · TAIKOR</TnTag>
-      </div>
-    </div>
-
     <div v-if="store.loadingDicts" class="calc-state">Загрузка справочников…</div>
     <div v-else-if="store.dictsError" class="calc-state">
       <div class="calc-banner calc-banner_error"><TnIcon name="info" :size="20" /><span>{{ store.dictsError }}</span></div>
