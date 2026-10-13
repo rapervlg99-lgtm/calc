@@ -1,34 +1,13 @@
 /* Оболочка приложения и страница калькулятора. Цвета — только токены TN Life. */
 
-/* ---------- шапка ---------- */
-.app-header {
-  background: var(--background-primary-a-enabled);
-  border-bottom: 1px solid var(--border-secondary-enabled);
-}
 /* Единый контейнер всех страниц: макет 1440 px, поля 24 px, контент 1392 px.
-   На экранах шире 1440 контент центрируется, шапка, вкладки и страницы стоят
-   по одной вертикали. */
-.app-header-inner, .app-tabs, .calc-page, .ozm-page {
+   На экранах шире 1440 контент центрируется, вкладки и страницы стоят
+   по одной вертикали. Шапки продукта нет — вертикаль начинается с вкладок. */
+.app-tabs, .calc-page, .ozm-page {
   max-width: 1440px; margin-left: auto; margin-right: auto; box-sizing: border-box;
 }
-.app-header-inner {
-  display: flex; align-items: center; gap: 24px;
-  padding: 0 24px; height: 64px;
-}
-.app-brand { display: flex; align-items: center; gap: 12px; color: var(--content-primary-a-enabled); }
-.app-brand:hover { color: var(--content-primary-a-enabled); }
-.app-brand-mark {
-  width: 36px; height: 36px; border-radius: 8px;
-  background: var(--background-accent-enabled); color: var(--content-primary-b-enabled);
-  display: inline-flex; align-items: center; justify-content: center;
-  font-weight: var(--font-weight-heading); font-size: var(--font-size-body-small); letter-spacing: 0.02em;
-}
-.app-brand-text { display: flex; flex-direction: column; gap: 0; line-height: 1; }
-.app-brand-company { font-size: var(--font-size-label-medium); line-height: var(--font-lineHeight-label-medium); font-weight: var(--font-weight-accent); color: var(--content-secondary-enabled); letter-spacing: 0.04em; }
-.app-brand-product { font-size: var(--font-size-body-medium); line-height: var(--font-lineHeight-body-medium); font-weight: var(--font-weight-heading); }
-.app-header-side { margin-left: auto; display: flex; align-items: center; gap: 12px; }
 
-/* ---------- вкладки разделов под шапкой (в рабочей области) ---------- */
+/* ---------- вкладки разделов (в рабочей области) ---------- */
 .app-tabs {
   display: flex; gap: 4px; padding: 16px 24px 0;
 }
@@ -51,7 +30,6 @@
   box-sizing: border-box;
 }
 .calc-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; padding: 0 4px; }
-.calc-title { font-size: var(--font-size-headline-medium); line-height: var(--font-lineHeight-headline-medium); font-weight: var(--font-weight-heading); }
 .calc-subtitle { font-size: var(--font-size-body-small); line-height: var(--font-lineHeight-body-small); color: var(--content-secondary-enabled); }
 
 .calc-layout { display: grid; grid-template-columns: minmax(0, 1fr) 336px; gap: 16px; align-items: start; }
@@ -192,8 +170,6 @@
   .calc-layout { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 900px) {
-  .app-header-inner { padding: 0 16px; gap: 16px; height: 56px; }
-  .app-brand-company { display: none; }
   .app-tabs { padding: 12px 16px 0; overflow-x: auto; }
   .calc-grid-object { grid-template-columns: 1fr; }
   .calc-grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -209,5 +185,5 @@
   .calc-group-head { flex-wrap: wrap; }
 }
 @media print {
-  .calc-bar, .app-header { display: none; }
+  .calc-bar { display: none; }
 }

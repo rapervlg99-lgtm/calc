@@ -7,19 +7,10 @@ const isRecognize = computed(() => route.path.startsWith('/recognize'))
 </script>
 
 <template>
-  <header class="app-header">
-    <div class="app-header-inner">
-      <router-link to="/" class="app-brand" aria-label="Калькулятор огнезащиты ТЕХНОНИКОЛЬ">
-        <span class="app-brand-mark">TN</span>
-        <span class="app-brand-text">
-          <span class="app-brand-company">ТЕХНОНИКОЛЬ</span>
-          <span class="app-brand-product">Калькулятор огнезащиты</span>
-        </span>
-      </router-link>
-    </div>
-  </header>
   <main>
-    <!-- Разделы — вкладками в рабочей области, под шапкой, а не в самой шапке -->
+    <!-- Разделы — вкладками в рабочей области. Шапки с названием продукта нет:
+         она дублировала заголовок раздела, а вертикаль контента начинается
+         с вкладок (единый контейнер 1440 — см. styles/app.css). -->
     <nav class="app-tabs" aria-label="Разделы">
       <router-link to="/" class="app-tab" :class="{ 'app-tab_active': !isRecognize }">Калькулятор</router-link>
       <router-link to="/recognize" class="app-tab" :class="{ 'app-tab_active': isRecognize }">Распознавание таблиц ИД</router-link>

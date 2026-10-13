@@ -331,10 +331,7 @@ const barTitle = computed(() => {
 <template>
   <div class="calc-page">
     <div class="calc-header">
-      <div style="display: flex; flex-direction: column; gap: 4px">
-        <h1 class="calc-title">Калькулятор огнезащиты металлоконструкций</h1>
-        <div class="calc-subtitle">Подбор огнезащитных решений ТЕХНОНИКОЛЬ · ориентировочный расчёт по таблицам ТН и ГОСТ Р 53295</div>
-      </div>
+      <div class="calc-subtitle">Подбор огнезащитных решений ТЕХНОНИКОЛЬ · ориентировочный расчёт по таблицам ТН и ГОСТ Р 53295</div>
       <div style="display: flex; gap: 8px">
         <TnTag inline icon="fire">ОЗМ · ОЗБ · TAIKOR</TnTag>
       </div>
