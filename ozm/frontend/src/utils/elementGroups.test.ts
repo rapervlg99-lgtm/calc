@@ -3,8 +3,10 @@ import {
   applyGroupAttrs,
   findElement,
   moveToGroup,
+  moveToUngrouped,
   nextGroupTitle,
   removeGroupKeepElements,
+  requestBlockPlan,
   uidOf,
   type ElementGroupLike
 } from './elementGroups'
@@ -61,13 +63,48 @@ describe('element groups', () => {
 
   it('removes a group but keeps its elements', () => {
     const groups = fixture()
-    expect(removeGroupKeepElements(groups, 1)).toBe(true)
+    const ungrouped: E[] = []
+    expect(removeGroupKeepElements(groups, 1, ungrouped)).toBe(true)
     expect(groups).toHaveLength(1)
-    expect(groups[0].elements.map((e) => e.name)).toEqual(['a', 'b', 'c', 'd'])
-    expect(removeGroupKeepElements(groups, 0)).toBe(false) // последнюю не удаляем
-    const g2 = fixture()
-    expect(removeGroupKeepElements(g2, 0)).toBe(true) // первая — элементы уходят в следующую
-    expect(g2[0].elements.map((e) => e.name)).toEqual(['d', 'a', 'b', 'c'])
+    expect(ungrouped.map((e) => e.name)).toEqual(['d'])
+    // последняя группа тоже удаляется — её элементы уходят в список без группы
+    expect(removeGroupKeepElements(groups, 0, ungrouped)).toBe(true)
+    expect(groups).toHaveLength(0)
+    expect(ungrouped.map((e) => e.name)).toEqual(['d', 'a', 'b', 'c'])
+    expect(removeGroupKeepElements(groups, 0, ungrouped)).toBe(false) // группы уже нет
+  })
+
+  it('moves elements back to the ungrouped list keeping order', () => {
+    const groups = fixture()
+    const ungrouped: E[] = [el('u', 9)]
+    expect(moveToUngrouped(ungrouped, groups, [2, 4])).toBe(2)
+    expect(ungrouped.map((e) => e.name)).toEqual(['u', 'b', 'd'])
+    expect(groups[0].elements.map((e) => e.name)).toEqual(['a', 'c'])
+    expect(groups[1].elements).toHaveLength(0)
+    // повторный перенос того же uid ничего не делает
+    expect(moveToUngrouped(ungrouped, groups, [2])).toBe(0)
+    expect(ungrouped).toHaveLength(3)
+  })
+
+  it('plans request groups: ungrouped first, empty groups skipped', () => {
+    // состояние по умолчанию: одна конструкция без группы
+    const only = requestBlockPlan([el('a', 1)], [])
+    expect(only).toHaveLength(1)
+    expect(only[0]).toMatchObject({ title: '', quantity: 1 })
+    expect(only[0].elements.map((e) => e.name)).toEqual(['a'])
+
+    const groups = fixture()
+    groups.push({ title: 'Пустая', elements: [] })
+    groups[0].title = '  Балки  '
+    groups[0].quantity = 3
+    const plan = requestBlockPlan([el('u', 9)], groups)
+    expect(plan.map((b) => b.title)).toEqual(['', 'Балки', 'Группа 2'])
+    expect(plan.map((b) => b.quantity)).toEqual([1, 3, 1])
+    expect(plan.every((b) => b.elements.length > 0)).toBe(true)
+
+    // без конструкций без группы первая группа запроса — пользовательская
+    const noUngrouped = requestBlockPlan([], groups)
+    expect(noUngrouped[0].title).toBe('Балки')
   })
 
   it('names new groups without collisions', () => {

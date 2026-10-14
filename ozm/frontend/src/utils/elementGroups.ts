@@ -1,11 +1,15 @@
 /**
  * Операции над группами элементов калькулятора (чистые функции, без Vue).
  *
- * Группы — это `form.groups`: массив `{ title, elements }`. Элементы
- * идентифицируются клиентским `_uid`, который не уходит в API. Механика та же,
- * что в форме ОГЗ («Группа элементов»): создать группу, затянуть в неё позиции
- * из общего списка, назначить всем элементам группы предел ОС и тип
- * конструкции, удалить группу — её элементы возвращаются в общий список.
+ * Форма держит два списка: `ungrouped` — конструкции без группы (состояние по
+ * умолчанию: одна конструкция, ни одной группы) и `groups` — группы, которые
+ * пользователь создал сам. Группа не предсоздаётся: она появляется по кнопке
+ * «Добавить группу конструкций», а её элементы пользователь туда переносит.
+ * Механика та же, что в форме ОГЗ («Группа элементов»): назначить всем
+ * элементам группы предел ОС и тип конструкции, удалить группу — её элементы
+ * возвращаются в общий список.
+ *
+ * Элементы идентифицируются клиентским `_uid`, который не уходит в API.
  */
 
 export interface GroupedElement {
@@ -17,6 +21,8 @@ export interface GroupedElement {
 export interface ElementGroupLike<E extends GroupedElement> {
   title: string
   elements: E[]
+  /** Сколько раз повторяется вся группа (множитель длин и материалов); по умолчанию 1. */
+  quantity?: number
   /** Общий предел ОС группы (R); '' — не задан. */
   groupHt?: number | ''
   /** Общий тип конструкции группы ('1' несущая / '0' самонесущая); '' — не задан. */
@@ -74,11 +80,35 @@ export function moveToGroup<E extends GroupedElement>(
 ): number {
   const dst = groups[target]
   if (!dst) return 0
+  // элемент, уже стоящий в целевой группе, не переносим и не дублируем
+  const inDst = new Set(dst.elements.map((e) => e._uid))
+  const want = uids.filter((u) => !inDst.has(u))
+  if (!want.length) return 0
+  const moved = extractElements(groups, want)
+  dst.elements.push(...moved)
+  applyGroupAttrs(dst, moved)
+  return moved.length
+}
+
+/**
+ * Обратный перенос: элементы с указанными uid уходят из своих групп в список
+ * «без группы» (в конец, порядок сохраняется). Возвращает число перенесённых.
+ */
+export function moveToUngrouped<E extends GroupedElement>(
+  ungrouped: E[],
+  groups: ElementGroupLike<E>[],
+  uids: number[]
+): number {
+  const moved = extractElements(groups, uids)
+  ungrouped.push(...moved)
+  return moved.length
+}
+
+/** Вынимает элементы из групп (порядок сохраняется), ничего не добавляя. */
+function extractElements<E extends GroupedElement>(groups: ElementGroupLike<E>[], uids: number[]): E[] {
   const want = new Set(uids)
   const moved: E[] = []
-  for (let gi = 0; gi < groups.length; gi++) {
-    const g = groups[gi]
-    if (gi === target) continue
+  for (const g of groups) {
     // внутри группы идём с конца (чтобы splice не сдвигал индексы), но
     // собираем в исходном порядке; группы обходим по возрастанию
     const part: E[] = []
@@ -91,22 +121,40 @@ export function moveToGroup<E extends GroupedElement>(
     }
     moved.push(...part)
   }
-  dst.elements.push(...moved)
-  applyGroupAttrs(dst, moved)
-  return moved.length
+  return moved
 }
 
 /**
- * Удаляет группу, переселяя её элементы в соседнюю (предыдущую, иначе
- * следующую). Последнюю группу удалить нельзя — элементы должны где-то жить.
+ * Удаляет группу, переселяя её элементы в список «без группы»: группа — это
+ * способ сгруппировать конструкции, а не место, где они обязаны жить.
  */
 export function removeGroupKeepElements<E extends GroupedElement>(
   groups: ElementGroupLike<E>[],
-  gi: number
+  gi: number,
+  ungrouped: E[] = []
 ): boolean {
-  if (groups.length <= 1 || !groups[gi]) return false
-  const receiver = gi > 0 ? groups[gi - 1] : groups[gi + 1]
-  receiver.elements.push(...groups[gi].elements)
+  if (!groups[gi]) return false
+  ungrouped.push(...groups[gi].elements)
   groups.splice(gi, 1)
   return true
+}
+
+/**
+ * План запроса к API. Контракт требует хотя бы одну группу с quantity > 0 и
+ * непустым списком элементов, поэтому конструкции без группы уходят первой
+ * группой с пустым названием и количеством 1 — количество 1 ничего не домножает,
+ * а название в расчёте и выгрузках не участвует. Пустые группы в запрос не
+ * попадают.
+ */
+export function requestBlockPlan<E extends GroupedElement>(
+  ungrouped: E[],
+  groups: ElementGroupLike<E>[]
+): { title: string; quantity: number; elements: E[] }[] {
+  const plan: { title: string; quantity: number; elements: E[] }[] = []
+  if (ungrouped.length) plan.push({ title: '', quantity: 1, elements: ungrouped })
+  for (const g of groups) {
+    if (!g.elements.length) continue
+    plan.push({ title: g.title.trim(), quantity: Number(g.quantity) || 1, elements: g.elements })
+  }
+  return plan
 }

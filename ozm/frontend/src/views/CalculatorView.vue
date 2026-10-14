@@ -7,9 +7,11 @@ import {
   applyGroupAttrs,
   findElement,
   moveToGroup,
+  moveToUngrouped,
   nextGroupTitle,
   nextUid,
   removeGroupKeepElements,
+  requestBlockPlan,
   uidOf
 } from '../utils/elementGroups'
 import { fmt, totalsOf, traceLinesFor } from '../utils/calcView'
@@ -65,7 +67,9 @@ function emptyElement(over: Partial<FormElement> = {}): FormElement {
   }
 }
 function emptyGroup(title = ''): FormGroup {
-  return { title, quantity: 1, elements: [emptyElement()], groupHt: '', groupFr: '' }
+  // Группа создаётся пустой: конструкция в неё попадает переносом (селектором
+  // «Без группы» или перетаскиванием), а не рождается вместе с группой.
+  return { title, quantity: 1, elements: [], groupHt: '', groupFr: '' }
 }
 
 const form = reactive({
@@ -73,7 +77,9 @@ const form = reactive({
   address: '',
   consent: false,
   frDurability: '1',
-  groups: [emptyGroup()] as FormGroup[],
+  /** Конструкции без группы — состояние по умолчанию: одна конструкция, ни одной группы. */
+  ungrouped: [emptyElement()] as FormElement[],
+  groups: [] as FormGroup[],
   betonOn: false,
   betonArea: null as number | null,
   betonR: '180'
@@ -85,7 +91,7 @@ const traceOpen = ref(false)
 const exportMsg = ref('')
 const prefillNote = ref('')
 const dragUid = ref<number | null>(null)
-const dragOverGroup = ref<number | null>(null)
+const dragOverBlock = ref<number | null>(null)
 
 // ---------- prefill из OCR ----------
 function applyPendingPrefill() {
@@ -96,13 +102,22 @@ function applyPendingPrefill() {
     prefillNote.value = 'Предзаполнение пустое — элементы не изменены'
     return
   }
-  form.groups = mapped.groups.map((g) => ({
-    title: g.title,
-    quantity: 1,
-    groupHt: '',
-    groupFr: '',
-    elements: g.elements.map((m) => ({ ...m.element, profileMiss: m.profileMiss, _uid: nextUid() }))
-  }))
+  form.ungrouped = []
+  form.groups = []
+  const toElement = (m: (typeof mapped.elements)[number]): FormElement => ({
+    ...m.element,
+    profileMiss: m.profileMiss,
+    _uid: nextUid()
+  })
+  // Группы без названия (в том числе единственная, когда группировка выключена) —
+  // это конструкции без группы: они идут в общий список, а не в панель группы.
+  for (const g of mapped.groups) {
+    if (g.title.trim()) {
+      form.groups.push({ title: g.title, quantity: 1, groupHt: '', groupFr: '', elements: g.elements.map(toElement) })
+    } else {
+      form.ungrouped.push(...g.elements.map(toElement))
+    }
+  }
   // Листовая сталь спецификации (фасонки, накладки, плиты) — это металл, а не
   // бетон: раньше её площадь включала тумблер ОЗБ и подставлялась как площадь
   // бетонных конструкций. Теперь ОЗБ задаёт только пользователь, а площадь
@@ -139,50 +154,89 @@ function durabilityLabel(v: string): string {
   return dicts.value?.selects.fr_durability.find((o) => o.value === v)?.label || v
 }
 
-// ---------- группы и элементы ----------
-const allElements = computed(() => form.groups.flatMap((g) => g.elements))
-const groupOptions = computed(() => form.groups.map((g, i) => ({ value: String(i), label: g.title.trim() || `Группа ${i + 1}` })))
+// ---------- конструкции и группы ----------
+// Блок — то, что рисуется карточкой на экране: конструкции без группы (ordinal 0)
+// и группы пользователя (ordinal 1…N, он же префикс нумерации элементов «1.1»).
+type Block = { ordinal: number; group?: FormGroup; elements: FormElement[] }
+
+const allElements = computed(() => [...form.ungrouped, ...form.groups.flatMap((g) => g.elements)])
+const groupOptions = computed(() => [
+  { value: '0', label: 'Без группы' },
+  ...form.groups.map((g, i) => ({ value: String(i + 1), label: g.title.trim() || `Группа ${i + 1}` }))
+])
+const blocks = computed<Block[]>(() => {
+  const list: Block[] = []
+  // Список «без группы» показываем, пока в нём есть конструкции или пока групп
+  // нет вовсе: иначе после переноса всего в группы некуда было бы добавить новую.
+  if (form.ungrouped.length || !form.groups.length) list.push({ ordinal: 0, elements: form.ungrouped })
+  form.groups.forEach((g, i) => list.push({ ordinal: i + 1, group: g, elements: g.elements }))
+  return list
+})
+
+function elementsOf(ordinal: number): FormElement[] | undefined {
+  return ordinal === 0 ? form.ungrouped : form.groups[ordinal - 1]?.elements
+}
 
 function markStale() {
   if (store.result) stale.value = true
 }
 function addGroup() {
-  form.groups.push({ title: nextGroupTitle(form.groups), quantity: 1, elements: [emptyElement()], groupHt: '', groupFr: '' })
+  // Пустая группа: конструкция в неё попадает переносом, а не создаётся вместе с ней.
+  form.groups.push(emptyGroup(nextGroupTitle(form.groups)))
 }
-function removeGroup(gi: number) {
-  if (form.groups.length <= 1) {
-    form.groups[0].elements = []
-    form.groups[0].title = ''
-    return
-  }
-  removeGroupKeepElements(form.groups, gi)
+function removeGroup(ordinal: number) {
+  const gi = ordinal - 1
+  if (gi < 0 || !form.groups[gi]) return
+  // Элементы удалённой группы возвращаются в список «без группы».
+  removeGroupKeepElements(form.groups, gi, form.ungrouped)
 }
-function addElement(gi: number) {
-  const g = form.groups[gi]
-  const last = g.elements[g.elements.length - 1]
-  g.elements.push(last ? emptyElement({ shape: last.shape, rollId: last.rollId, dims: { ...(last.dims || {}) }, frType: last.frType, htLevel: last.htLevel, coat: last.coat, method: last.method }) : emptyElement())
+function addElement(ordinal: number) {
+  const list = elementsOf(ordinal)
+  if (!list) return
+  const last = list[list.length - 1]
+  list.push(
+    last
+      ? emptyElement({ shape: last.shape, rollId: last.rollId, dims: { ...(last.dims || {}) }, frType: last.frType, htLevel: last.htLevel, coat: last.coat, method: last.method })
+      : emptyElement()
+  )
 }
-function copyElement(gi: number, ei: number) {
-  const src = form.groups[gi]?.elements[ei]
-  if (!src) return
+function copyElement(ordinal: number, ei: number) {
+  const list = elementsOf(ordinal)
+  const src = list?.[ei]
+  if (!list || !src) return
   const clone: FormElement = structuredClone({ ...src })
   delete clone.id
   clone._uid = nextUid()
   clone.title = src.title ? `${src.title} (копия)` : ''
-  form.groups[gi].elements.splice(ei + 1, 0, clone)
+  list.splice(ei + 1, 0, clone)
 }
-function removeElement(gi: number, ei: number) {
-  form.groups[gi]?.elements.splice(ei, 1)
+function removeElement(ordinal: number, ei: number) {
+  elementsOf(ordinal)?.splice(ei, 1)
 }
-function moveElementTo(el: FormElement, gi: number) {
-  moveToGroup(form.groups, [uidOf(el)], gi)
+/** Перенос по ordinal: 0 — «без группы», 1…N — номер группы. */
+function moveByUid(uid: number, ordinal: number) {
+  if (ordinal === 0) moveToUngrouped(form.ungrouped, form.groups, [uid])
+  else moveToGroup(form.groups, [uid], ordinal - 1)
 }
-function groupIndexOf(el: FormElement): number {
-  return findElement(form.groups, uidOf(el))?.gi ?? 0
+function moveElementTo(el: FormElement, ordinal: number) {
+  moveByUid(uidOf(el), ordinal)
 }
-function onGroupAttrs(gi: number) {
-  const g = form.groups[gi]
+/** Номер блока для селектора группы: 0 — конструкция вне группы. */
+function blockOrdinalOf(el: FormElement): number {
+  const found = findElement(form.groups, uidOf(el))
+  return found ? found.gi + 1 : 0
+}
+function onGroupAttrs(ordinal: number) {
+  const g = form.groups[ordinal - 1]
   if (g) applyGroupAttrs(g)
+}
+function setGroupQuantity(b: Block, v: number | null) {
+  if (b.group) b.group.quantity = v ?? 1
+}
+function setGroupHt(b: Block, v: string) {
+  if (!b.group) return
+  b.group.groupHt = v === '' ? '' : Number(v)
+  applyGroupAttrs(b.group)
 }
 function onDragStart(el: FormElement, e: DragEvent) {
   dragUid.value = uidOf(el)
@@ -191,14 +245,15 @@ function onDragStart(el: FormElement, e: DragEvent) {
     e.dataTransfer.setData('text/plain', String(dragUid.value))
   }
 }
-function onDropToGroup(gi: number) {
-  dragOverGroup.value = null
+function onDropToBlock(ordinal: number) {
+  dragOverBlock.value = null
   const uid = dragUid.value
   dragUid.value = null
-  if (uid != null) moveToGroup(form.groups, [uid], gi)
+  if (uid != null) moveByUid(uid, ordinal)
 }
-function elementLabel(gi: number, ei: number): string {
-  return `${gi + 1}.${ei + 1}`
+/** Нумерация элементов: «1», «2» вне группы и «1.1», «1.2» внутри группы. */
+function elementLabel(ordinal: number, ei: number): string {
+  return ordinal ? `${ordinal}.${ei + 1}` : `${ei + 1}`
 }
 
 // ---------- валидация ----------
@@ -209,13 +264,11 @@ const validation = computed(() => {
   if (!form.objectName.trim()) { errs.objectName = 'Обязательное поле'; count++ }
   if (!form.address.trim()) { errs.address = 'Обязательное поле'; count++ }
   if (!form.consent) { errs.consent = 'Без согласия расчёт недоступен'; count++ }
-  for (const g of form.groups) {
-    for (const el of g.elements) {
-      const e: { length?: string; quantity?: string } = {}
-      if (!(Number(el.lengthM) > 0)) { e.length = 'Длина должна быть больше 0'; count++ }
-      if (!(Number(el.quantity) > 0)) { e.quantity = 'Количество должно быть больше 0'; count++ }
-      if (e.length || e.quantity) errs.elements[uidOf(el)] = e
-    }
+  for (const el of allElements.value) {
+    const e: { length?: string; quantity?: string } = {}
+    if (!(Number(el.lengthM) > 0)) { e.length = 'Длина должна быть больше 0'; count++ }
+    if (!(Number(el.quantity) > 0)) { e.quantity = 'Количество должно быть больше 0'; count++ }
+    if (e.length || e.quantity) errs.elements[uidOf(el)] = e
   }
   if (!allElements.value.length) count++
   if (form.betonOn && !(Number(form.betonArea) > 0)) { errs.betonArea = 'Площадь должна быть больше 0'; count++ }
@@ -237,14 +290,14 @@ function mapEl(el: FormElement, i: number): ElementInput {
 }
 function buildGroups(): GroupInput[] {
   let i = 0
-  return form.groups
-    .filter((g) => g.elements.length)
-    .map((g, gi) => ({
-      id: `g${gi + 1}`,
-      title: g.title.trim() || `Группа ${gi + 1}`,
-      quantity: Number(g.quantity) || 1,
-      elements: g.elements.map((el) => mapEl(el, i++))
-    }))
+  // Конструкции без группы уходят первой группой с пустым названием: контракт
+  // требует хотя бы одну группу, а количество 1 ничего не домножает.
+  return requestBlockPlan(form.ungrouped, form.groups).map((b, bi) => ({
+    id: `g${bi + 1}`,
+    title: b.title,
+    quantity: b.quantity,
+    elements: b.elements.map((el) => mapEl(el, i++))
+  }))
 }
 function buildBeton(): BetonInput | null {
   if (!form.betonOn || !(Number(form.betonArea) > 0)) return null
@@ -300,9 +353,10 @@ const messages = computed(() =>
       color: r.coat === '1.5' ? ORANGE : RED
     }))
 )
-const totalLength = computed(() =>
-  form.groups.reduce((a, g) => a + g.elements.reduce((b, el) => b + (Number(el.lengthM) || 0) * (Number(el.quantity) || 0), 0) * (Number(g.quantity) || 1), 0)
-)
+const totalLength = computed(() => {
+  const own = (list: FormElement[]) => list.reduce((a, el) => a + (Number(el.lengthM) || 0) * (Number(el.quantity) || 0), 0)
+  return own(form.ungrouped) + form.groups.reduce((a, g) => a + own(g.elements) * (Number(g.quantity) || 1), 0)
+})
 const traceLines = computed(() => result.value?.trace || [])
 function traceFor(id: string): string[] {
   return traceLinesFor(result.value?.trace, id)
@@ -323,7 +377,9 @@ const barHintColor = computed(() =>
   store.error || (touched.value && validation.value.count) ? RED : stale.value ? ORANGE : exportMsg.value ? GREEN : 'var(--content-secondary-enabled)'
 )
 const barTitle = computed(() => {
-  const base = `${form.groups.length} гр. · ${allElements.value.length} эл. · ${fmt(totalLength.value, 1)} м`
+  // Групп по умолчанию нет — тогда в строке итогов их и не упоминаем.
+  const groupsPart = form.groups.length ? `${form.groups.length} гр. · ` : ''
+  const base = `${groupsPart}${allElements.value.length} эл. · ${fmt(totalLength.value, 1)} м`
   return result.value ? `${base} · ${fmt(totals.value.area, 1)} м² огнезащиты` : base
 })
 </script>
@@ -354,47 +410,51 @@ const barTitle = computed(() => {
         </TnCard>
 
         <TnCard
-          v-for="(g, gi) in form.groups"
-          :key="gi"
-          :class="{ 'calc-group-drop': dragOverGroup === gi }"
-          @dragover.prevent="dragOverGroup = gi"
-          @dragleave="dragOverGroup === gi && (dragOverGroup = null)"
-          @drop.prevent="onDropToGroup(gi)"
+          v-for="b in blocks"
+          :key="b.ordinal"
+          :class="{ 'calc-group-drop': dragOverBlock === b.ordinal }"
+          @dragover.prevent="dragOverBlock = b.ordinal"
+          @dragleave="dragOverBlock === b.ordinal && (dragOverBlock = null)"
+          @drop.prevent="onDropToBlock(b.ordinal)"
         >
           <div class="calc-col">
-            <div class="calc-group-head">
+            <!-- Панель группы: у конструкций без группы её нет — по умолчанию
+                 на экране одна конструкция и ни одной группы. -->
+            <div v-if="b.group" class="calc-group-head">
               <div style="flex: 1 1 auto; min-width: 160px">
-                <TnInput v-model="g.title" label="Группа конструкций" :placeholder="`Группа ${gi + 1}`" />
+                <TnInput v-model="b.group.title" label="Группа конструкций" :placeholder="`Группа ${b.ordinal}`" />
               </div>
               <div style="flex: 0 0 132px">
-                <TnNumberInput :model-value="g.quantity" label="Кол-во групп" required integer @update:model-value="(v) => (g.quantity = v ?? 1)" />
+                <TnNumberInput :model-value="b.group.quantity" label="Кол-во групп" required integer @update:model-value="(v) => setGroupQuantity(b, v)" />
               </div>
-              <div v-if="form.groups.length > 1 || g.elements.length > 1" style="flex: 0 0 120px">
-                <TnSelect :model-value="g.groupHt === '' || g.groupHt === undefined ? '' : String(g.groupHt)" label="R для всех" placeholder="R…" :options="(dicts.selects.ht_level || [])" @update:model-value="(v) => { g.groupHt = v === '' ? '' : Number(v); onGroupAttrs(gi) }" />
+              <div v-if="form.groups.length > 1 || b.elements.length > 1" style="flex: 0 0 120px">
+                <TnSelect :model-value="b.group.groupHt === '' || b.group.groupHt === undefined ? '' : String(b.group.groupHt)" label="R для всех" placeholder="R…" :options="(dicts.selects.ht_level || [])" @update:model-value="(v) => setGroupHt(b, v)" />
               </div>
-              <TnButton link icon="delete" @click="removeGroup(gi)">Удалить группу</TnButton>
+              <TnButton link icon="delete" @click="removeGroup(b.ordinal)">Удалить группу</TnButton>
             </div>
 
-            <div v-if="!g.elements.length" class="calc-group-empty">Группа пуста — добавьте элемент или перетащите его сюда из другой группы.</div>
+            <div v-if="!b.elements.length" class="calc-group-empty">
+              {{ b.group ? 'Группа пуста — добавьте элемент или перетащите его сюда из общего списка.' : 'Добавьте конструкцию — или перетащите сюда элемент из группы, чтобы вынести его из неё.' }}
+            </div>
 
             <ElementCard
-              v-for="(el, ei) in g.elements"
+              v-for="(el, ei) in b.elements"
               :key="el._uid ?? ei"
               :el="el"
-              :label="elementLabel(gi, ei)"
+              :label="elementLabel(b.ordinal, ei)"
               :dicts="dicts"
               :result="resultFor(el)"
               :errors="shownErrors.elements[uidOf(el)]"
               :group-options="groupOptions"
-              :group-index="groupIndexOf(el)"
-              :draggable="form.groups.length > 1"
-              @copy="copyElement(gi, ei)"
-              @remove="removeElement(gi, ei)"
+              :group-index="blockOrdinalOf(el)"
+              :draggable="blocks.length > 1"
+              @copy="copyElement(b.ordinal, ei)"
+              @remove="removeElement(b.ordinal, ei)"
               @move="(to) => moveElementTo(el, to)"
               @dragstart="(e) => onDragStart(el, e)"
             />
 
-            <div><TnButton secondary size="md" icon="add" @click="addElement(gi)">Добавить элемент</TnButton></div>
+            <div><TnButton secondary size="md" icon="add" @click="addElement(b.ordinal)">Добавить элемент</TnButton></div>
           </div>
         </TnCard>
 
