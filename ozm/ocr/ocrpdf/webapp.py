@@ -649,8 +649,7 @@ PAGE = r"""<!doctype html>
   <!-- Параметров распознавания на странице нет: страницы, DPI, порог проверки,
        OCR для сканов и трассировка по символам — настройки сервиса, их задаёт
        администратор переменными окружения OCRPDF_* (см. README, «Веб-интерфейс»).
-       Ниже — только состояние: какой движок отработает сканы при текущих настройках. -->
-  <div id="ocrstatus" class="note" style="margin-top:10px"></div>
+       Страница только принимает файл и показывает результат. -->
   <div id="busy" class="opts"><div class="spin"></div><span id="busytext">Обработка…</span>
     <button id="stop" type="button" title="Прервать распознавание этого файла">Остановить</button></div>
   <div id="recent" class="note" style="margin-top:10px"></div>
@@ -688,20 +687,6 @@ function handoff(d){
   target.postMessage(payload, "*");
 }
 const drop = $("#drop"), file = $("#file"), out = $("#out"), busy = $("#busy");
-
-// какие OCR-движки установлены: показываем состоянием, без выбора — режим OCR
-// задаёт администратор сервиса (OCRPDF_OCR), страница только сообщает, что
-// получится при текущих настройках.
-fetch(BASE + "/api/capabilities").then(r => r.json()).then(c => {
-  const ocr = c.ocr || {};
-  const resolved = ["hybrid", "tesseract", "rapidocr"].find(n => (ocr[n] || {}).available);
-  const label = {hybrid: "гибрид (Tesseract + RapidOCR)", tesseract: "Tesseract", rapidocr: "RapidOCR"}[resolved];
-  let text = resolved
-    ? "Сканы читает: " + label + ". Режим OCR, DPI и порог проверки заданы настройками сервиса."
-    : "OCR-движки не установлены: листы без текстового слоя читаться не будут. Настройки сервиса — у администратора.";
-  if (resolved === "rapidocr") text += " Внимание: RapidOCR не знает кириллицы.";
-  $("#ocrstatus").textContent = text;
-}).catch(() => {});
 
 drop.onclick = () => file.click();
 drop.ondragover = e => { e.preventDefault(); drop.classList.add("hot"); };
