@@ -1,25 +1,11 @@
 /* Оболочка приложения и страница калькулятора. Цвета — только токены TN Life. */
 
 /* Единый контейнер всех страниц: макет 1440 px, поля 24 px, контент 1392 px.
-   На экранах шире 1440 контент центрируется, вкладки и страницы стоят
-   по одной вертикали. Шапки продукта нет — вертикаль начинается с вкладок. */
-.app-tabs, .calc-page, .ozm-page {
+   На экранах шире 1440 контент центрируется: калькулятор и страницы
+   распознавания стоят по одной вертикали. Шапки и вкладок разделов нет —
+   страница начинается со своего содержимого. */
+.calc-page, .ozm-page {
   max-width: 1440px; margin-left: auto; margin-right: auto; box-sizing: border-box;
-}
-
-/* ---------- вкладки разделов (в рабочей области) ---------- */
-.app-tabs {
-  display: flex; gap: 4px; padding: 16px 24px 0;
-}
-.app-tab {
-  display: inline-flex; align-items: center; height: 40px; padding: 0 16px;
-  border-radius: 8px; font-size: var(--font-size-body-small); line-height: var(--font-lineHeight-body-small); font-weight: var(--font-weight-accent);
-  color: var(--content-secondary-enabled);
-  transition: color var(--duration-instant) linear, background-color var(--duration-instant) linear;
-}
-.app-tab:hover { color: var(--content-primary-a-enabled); background: var(--background-tertiary-hover); }
-.app-tab_active, .app-tab_active:hover {
-  color: var(--content-primary-b-enabled); background: var(--background-accent-enabled);
 }
 
 /* ---------- страница калькулятора ---------- */
@@ -67,6 +53,18 @@
   border: 1px dashed var(--border-secondary-hover); border-radius: 12px; padding: 16px;
   color: var(--content-secondary-enabled); font-size: var(--font-size-body-small); line-height: var(--font-lineHeight-body-small);
 }
+
+/* выбор способа заполнения: вручную или распознаванием таблицы ИД — в области
+   первой конструкции, до того как пользователь начал вводить элементы */
+.calc-ocr-cta {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 12px 16px; border-radius: 12px;
+  background: var(--background-primary-a-enabled);
+  border-left: 4px solid var(--content-accent-enabled);
+  color: var(--content-secondary-enabled);
+  font-size: var(--font-size-body-small); line-height: var(--font-lineHeight-body-small);
+}
+.calc-ocr-cta > span { flex: 1 1 320px; min-width: 220px; }
 
 /* элемент */
 .calc-el-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
@@ -168,7 +166,6 @@
   .calc-layout { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 900px) {
-  .app-tabs { padding: 12px 16px 0; overflow-x: auto; }
   .calc-grid-object { grid-template-columns: 1fr; }
   .calc-grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .calc-grid-5 { grid-template-columns: repeat(3, minmax(0, 1fr)); }

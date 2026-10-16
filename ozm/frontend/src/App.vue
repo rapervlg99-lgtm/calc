@@ -1,20 +1,10 @@
-<script setup lang="ts">
-import { computed } from 'vue'
-import { useRoute } from 'vue-router'
-
-const route = useRoute()
-const isRecognize = computed(() => route.path.startsWith('/recognize'))
-</script>
-
 <template>
+  <!-- Оболочки нет: разделы не переключаются вкладками. Калькулятор — входная
+       страница, распознавание таблиц ИД открывается из области первой
+       конструкции, а страницы распознавания несут свою ссылку назад
+       («← К калькулятору»). Единый контейнер 1440 px — на самих страницах
+       (.calc-page, .ozm-page, см. styles/app.css). -->
   <main>
-    <!-- Разделы — вкладками в рабочей области. Шапки с названием продукта нет:
-         она дублировала заголовок раздела, а вертикаль контента начинается
-         с вкладок (единый контейнер 1440 — см. styles/app.css). -->
-    <nav class="app-tabs" aria-label="Разделы">
-      <router-link to="/" class="app-tab" :class="{ 'app-tab_active': !isRecognize }">Калькулятор</router-link>
-      <router-link to="/recognize" class="app-tab" :class="{ 'app-tab_active': isRecognize }">Распознавание таблиц ИД</router-link>
-    </nav>
     <router-view />
   </main>
 </template>

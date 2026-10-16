@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { useCalcStore } from '../stores/calc'
 import { usePrefillStore } from '../stores/prefill'
 import { mapPrefillPayload } from '../utils/prefillMapper'
@@ -41,6 +42,15 @@ type FormGroup = {
 
 const store = useCalcStore()
 const prefillStore = usePrefillStore()
+const router = useRouter()
+
+/** Вход в распознавание таблиц ИД. Вкладок разделов больше нет: решение
+ *  «вручную или распознаванием» пользователь принимает в области первой
+ *  конструкции (см. .calc-ocr-cta), а страница распознавания несёт свою ссылку
+ *  «← К калькулятору». */
+function goRecognize() {
+  router.push('/recognize')
+}
 
 const RED = 'var(--content-system-negative)'
 const ORANGE = 'var(--content-system-warning)'
@@ -176,6 +186,10 @@ const blocks = computed<Block[]>(() => {
 function elementsOf(ordinal: number): FormElement[] | undefined {
   return ordinal === 0 ? form.ungrouped : form.groups[ordinal - 1]?.elements
 }
+
+/** Блок с первой конструкцией: там же стоит выбор «вручную или распознавание»,
+ *  поэтому перенос конструкции в группу этот выбор не убирает. */
+const firstFilledOrdinal = computed(() => blocks.value.find((b) => b.elements.length)?.ordinal ?? -1)
 
 function markStale() {
   if (store.result) stale.value = true
@@ -431,6 +445,15 @@ const barTitle = computed(() => {
                 <TnSelect :model-value="b.group.groupHt === '' || b.group.groupHt === undefined ? '' : String(b.group.groupHt)" label="R для всех" placeholder="R…" :options="(dicts.selects.ht_level || [])" @update:model-value="(v) => setGroupHt(b, v)" />
               </div>
               <TnButton link icon="delete" @click="removeGroup(b.ordinal)">Удалить группу</TnButton>
+            </div>
+
+            <!-- Выбор способа заполнения — в области первой конструкции: пока
+                 строки не пришли из распознавания, пользователь решает здесь,
+                 заполнять конструкции вручную или распознать таблицу ИД. -->
+            <div v-if="b.ordinal === firstFilledOrdinal && !prefillNote" class="calc-ocr-cta">
+              <TnIcon name="info" :size="20" />
+              <span>Конструкции можно заполнить вручную — или распознать таблицу ИД из PDF или скана спецификации, строки придут в эту форму.</span>
+              <TnButton secondary size="md" @click="goRecognize">Распознать таблицу ИД</TnButton>
             </div>
 
             <div v-if="!b.elements.length" class="calc-group-empty">
