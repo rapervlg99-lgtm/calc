@@ -31,7 +31,7 @@ def test_count_pages_and_garbage():
 def test_page_limit(monkeypatch):
     monkeypatch.setattr(webapp, "MAX_PAGES", 10)
     n, err = webapp.page_limit_error(12, "")
-    assert n == 12 and "не больше 10" in err and "Страницы" in err
+    assert n == 12 and "не больше 10" in err and "OCRPDF_PAGES" in err
     n, err = webapp.page_limit_error(12, "1-3")
     assert (n, err) == (3, "")
     n, err = webapp.page_limit_error(12, "1-11")
@@ -39,9 +39,42 @@ def test_page_limit(monkeypatch):
     n, err = webapp.page_limit_error(0, "")
     assert n == 0 and "не удалось открыть" in err
     n, err = webapp.page_limit_error(5, "abc")
-    assert n == 0 and "Страницы" in err
+    assert n == 0 and "pages" in err
     n, err = webapp.page_limit_error(5, "9-12")
     assert n == 0 and "нет ни одной" in err
+
+
+def test_options_take_server_defaults_when_request_is_silent(monkeypatch):
+    """Страница параметров не отправляет: значения обязаны приходить из настроек
+    сервиса (переменные OCRPDF_*), а не из зашитых в обработчике чисел."""
+    monkeypatch.setattr(webapp, "DEFAULT_DPI", 350)
+    monkeypatch.setattr(webapp, "DEFAULT_LOW_CONF", 0.62)
+    monkeypatch.setattr(webapp, "DEFAULT_PAGES", "")
+    monkeypatch.setattr(webapp, "DEFAULT_ALL_GLYPHS", False)
+    monkeypatch.setattr(webapp, "DEFAULT_OCR", "auto")
+
+    opts = webapp.options_from_request(lambda _key, default="": default)
+    assert (opts.dpi, opts.low_conf, opts.pages, opts.all_glyphs, opts.ocr_backend) == (350, 0.62, "", False, "auto")
+
+    # настройки администратора меняются переменными — проверяем, что запрос их не перебивает
+    monkeypatch.setattr(webapp, "DEFAULT_DPI", 450)
+    monkeypatch.setattr(webapp, "DEFAULT_LOW_CONF", 0.7)
+    monkeypatch.setattr(webapp, "DEFAULT_PAGES", "1-3")
+    monkeypatch.setattr(webapp, "DEFAULT_ALL_GLYPHS", True)
+    monkeypatch.setattr(webapp, "DEFAULT_OCR", "tesseract")
+    opts = webapp.options_from_request(lambda _key, default="": default)
+    assert (opts.dpi, opts.low_conf, opts.pages, opts.all_glyphs, opts.ocr_backend) == (450, 0.7, "1-3", True, "tesseract")
+
+
+def test_options_request_fields_override_defaults():
+    """Программное переопределение полями формы (скрипты прогонов) сохраняется."""
+    fields = {"dpi": "600", "low_conf": "0.5", "pages": "2-4", "all_glyphs": "1", "ocr": "hybrid"}
+    opts = webapp.options_from_request(lambda key, default="": fields.get(key, default))
+    assert (opts.dpi, opts.low_conf, opts.pages, opts.all_glyphs, opts.ocr_backend) == (600, 0.5, "2-4", True, "hybrid")
+
+    # неизвестный движок и пустые значения не ломают разбор
+    opts = webapp.options_from_request(lambda key, default="": {"ocr": "нет-такого"}.get(key, default))
+    assert opts.ocr_backend == "none"
 
 
 def test_budget_scales_with_pages(monkeypatch):

@@ -98,6 +98,13 @@ services:
       OCRPDF_TEMPLATE_CACHE_MB: ${OCRPDF_TEMPLATE_CACHE_MB:-512}
       OCRPDF_TEMPLATE_CACHE_DIR: /tmp/ocrpdf-templates
       OCRPDF_TEMPLATE_DISK_MB: ${OCRPDF_TEMPLATE_DISK_MB:-512}
+      # Настройки распознавания: полей на странице OCR больше нет, значения
+      # задаёт администратор здесь или в dev/.env (дефолты — ocr/README.md).
+      OCRPDF_DPI: ${OCRPDF_DPI:-350}
+      OCRPDF_LOW_CONF: ${OCRPDF_LOW_CONF:-0.62}
+      OCRPDF_OCR: ${OCRPDF_OCR:-auto}
+      # OCRPDF_PAGES: ${OCRPDF_PAGES:-}        # пусто — все листы
+      # OCRPDF_ALL_GLYPHS: ${OCRPDF_ALL_GLYPHS:-0}
     restart: unless-stopped
 
   ozm-postgres:

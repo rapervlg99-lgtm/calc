@@ -53,6 +53,41 @@ MIN_JOB_SEC = float(os.environ.get("OCRPDF_MIN_JOB_SEC", "") or 600)
 SAFE_NAME = re.compile(r"^[A-Za-z0-9_.\-]+$")
 JOB_ID = re.compile(r"^[0-9a-f]{32}$")
 
+# ── Настройки распознавания ───────────────────────────────────────────────────
+# Это настройки СЕРВИСА, а не страницы: интерфейс никаких полей не показывает,
+# значения задаёт администратор переменными окружения (в стенде — compose,
+# см. dev/docker-compose.local.yml и infra/docker-compose.yaml). Запрос может
+# переопределить любое из них полями формы (pages, dpi, low_conf, all_glyphs,
+# ocr) — этим пользуются скрипты прогонов и приёмка; сама страница не отправляет
+# ни одного из этих полей и работает на значениях ниже.
+DEFAULT_PAGES = os.environ.get("OCRPDF_PAGES", "") or ""
+DEFAULT_DPI = max(150, min(600, int(os.environ.get("OCRPDF_DPI", "") or 350)))
+DEFAULT_LOW_CONF = max(0.0, min(1.0, float(os.environ.get("OCRPDF_LOW_CONF", "") or 0.62)))
+DEFAULT_ALL_GLYPHS = (os.environ.get("OCRPDF_ALL_GLYPHS", "") or "").strip().lower() in ("1", "true", "yes", "on")
+DEFAULT_OCR = (os.environ.get("OCRPDF_OCR", "") or "auto").strip().lower()
+OCR_BACKENDS = ("none", "auto", "hybrid", "rapidocr", "tesseract")
+if DEFAULT_OCR not in OCR_BACKENDS:
+    DEFAULT_OCR = "auto"
+
+
+def options_from_request(get) -> "Options":
+    """Options из полей запроса; чего в запросе нет — берётся из настроек сервиса.
+
+    `get(key, default)` — доступ к полю формы. Вынесено из обработчика, чтобы
+    значения по умолчанию и разбор полей проверялись тестом, а не только живым
+    запросом (страница полей не отправляет вовсе).
+    """
+    ocr = (get("ocr", DEFAULT_OCR) or DEFAULT_OCR).strip().lower()
+    if ocr not in OCR_BACKENDS:
+        ocr = "none"
+    return Options(
+        dpi=max(150, min(600, int(get("dpi", str(DEFAULT_DPI)) or DEFAULT_DPI))),
+        low_conf=max(0.0, min(1.0, float(get("low_conf", str(DEFAULT_LOW_CONF)) or DEFAULT_LOW_CONF))),
+        pages=get("pages", DEFAULT_PAGES),
+        all_glyphs=(get("all_glyphs", "1" if DEFAULT_ALL_GLYPHS else "0") or "0") == "1",
+        ocr_backend=ocr,
+    )
+
 
 def normalize_base_path(path: str) -> str:
     """'/ocr/' → '/ocr'; '/' или пустая строка → ''."""
@@ -135,16 +170,16 @@ def page_limit_error(n_pages: int, pages_spec: str) -> tuple[int, str]:
     try:
         selected = len(parse_pages(pages_spec, n_pages))
     except ValueError:
-        return 0, "поле «Страницы» должно выглядеть как 1-3 или 2,5"
+        return 0, "параметр pages должен выглядеть как 1-3 или 2,5"
     if not selected:
-        return 0, "в поле «Страницы» нет ни одной страницы из %d" % n_pages
+        return 0, "в параметре pages нет ни одной страницы из %d" % n_pages
     if selected > MAX_PAGES:
         if pages_spec.strip():
             msg = ("выбрано %d страниц, за одно задание обрабатывается не больше %d"
                    % (selected, MAX_PAGES))
         else:
             msg = ("в документе %d страниц, за одно задание обрабатывается не больше %d — "
-                   "укажите нужные листы в поле «Страницы», например 1-%d"
+                   "нужные листы задаёт администратор сервиса (OCRPDF_PAGES), например 1-%d"
                    % (n_pages, MAX_PAGES, MAX_PAGES))
         return selected, msg
     return selected, ""
@@ -609,22 +644,13 @@ PAGE = r"""<!doctype html>
     <span>Выбран файл: <span class="fname" id="fname"></span> <span id="fsize" class="note"></span></span>
     <button id="go" type="button" title="Начать распознавание выбранного файла">Распознать</button>
     <button id="swap" type="button" title="Выбрать другой файл вместо этого">Заменить файл</button>
-    <span class="note">Проверьте файл и настройки ниже, затем нажмите «Распознать»</span>
+    <span class="note">Проверьте файл и нажмите «Распознать»</span>
   </div>
-  <div class="opts">
-    <label>Страницы <input id="pages" type="text" placeholder="все" size="8"></label>
-    <label>DPI <input id="dpi" type="number" value="350" min="150" max="600" step="50"></label>
-    <label>Порог проверки <input id="lowconf" type="number" value="0.62" min="0" max="1" step="0.02"></label>
-    <label>OCR для сканов <select id="ocr">
-      <option value="auto" selected>Авто — лучший доступный</option>
-      <option value="hybrid">Гибрид (текст Tesseract + числа RapidOCR)</option>
-      <option value="rapidocr">RapidOCR (без кириллицы)</option>
-      <option value="tesseract">Tesseract</option>
-      <option value="none">не использовать</option>
-    </select></label>
-    <span id="ocrhint" class="note"></span>
-    <label><input id="allglyphs" type="checkbox"> трассировка по символам</label>
-  </div>
+  <!-- Параметров распознавания на странице нет: страницы, DPI, порог проверки,
+       OCR для сканов и трассировка по символам — настройки сервиса, их задаёт
+       администратор переменными окружения OCRPDF_* (см. README, «Веб-интерфейс»).
+       Ниже — только состояние: какой движок отработает сканы при текущих настройках. -->
+  <div id="ocrstatus" class="note" style="margin-top:10px"></div>
   <div id="busy" class="opts"><div class="spin"></div><span id="busytext">Обработка…</span>
     <button id="stop" type="button" title="Прервать распознавание этого файла">Остановить</button></div>
   <div id="recent" class="note" style="margin-top:10px"></div>
@@ -663,23 +689,19 @@ function handoff(d){
 }
 const drop = $("#drop"), file = $("#file"), out = $("#out"), busy = $("#busy");
 
-// какие OCR-движки установлены: недоступные помечаем и не даём выбрать
+// какие OCR-движки установлены: показываем состоянием, без выбора — режим OCR
+// задаёт администратор сервиса (OCRPDF_OCR), страница только сообщает, что
+// получится при текущих настройках.
 fetch(BASE + "/api/capabilities").then(r => r.json()).then(c => {
   const ocr = c.ocr || {};
-  for (const [name, info] of Object.entries(ocr)) {
-    const opt = document.querySelector(`#ocr option[value="${name}"]`);
-    if (!opt) continue;
-    if (!info.available) { opt.disabled = true; opt.textContent += " — не установлен"; }
-  }
-  // «Авто» берёт первый доступный в этом порядке — покажем, во что он развернётся
   const resolved = ["hybrid", "tesseract", "rapidocr"].find(n => (ocr[n] || {}).available);
-  const label = {hybrid: "гибрид", tesseract: "Tesseract", rapidocr: "RapidOCR"}[resolved];
-  let hint = resolved
-    ? "авто = " + label + "; включается только для блоков, которые не удалось прочитать по векторам"
-    : "ни один OCR-движок не установлен — авто равносильно «не использовать»";
-  if (resolved === "rapidocr") hint += " (внимание: кириллицу не читает)";
-  $("#ocrhint").textContent = hint;
-});
+  const label = {hybrid: "гибрид (Tesseract + RapidOCR)", tesseract: "Tesseract", rapidocr: "RapidOCR"}[resolved];
+  let text = resolved
+    ? "Сканы читает: " + label + ". Режим OCR, DPI и порог проверки заданы настройками сервиса."
+    : "OCR-движки не установлены: листы без текстового слоя читаться не будут. Настройки сервиса — у администратора.";
+  if (resolved === "rapidocr") text += " Внимание: RapidOCR не знает кириллицы.";
+  $("#ocrstatus").textContent = text;
+}).catch(() => {});
 
 drop.onclick = () => file.click();
 drop.ondragover = e => { e.preventDefault(); drop.classList.add("hot"); };
@@ -723,12 +745,9 @@ function send(f){
   if (!/\.pdf$/i.test(f.name)) { out.innerHTML = '<div class="err">Нужен файл PDF.</div>'; return; }
   clearPick();
   const fd = new FormData();
+  // Только файл: параметры распознавания (pages, dpi, low_conf, all_glyphs, ocr)
+  // не отправляются — сервер берёт их из своих настроек (OCRPDF_*).
   fd.append("file", f);
-  fd.append("pages", $("#pages").value);
-  fd.append("dpi", $("#dpi").value);
-  fd.append("low_conf", $("#lowconf").value);
-  fd.append("all_glyphs", $("#allglyphs").checked ? "1" : "0");
-  fd.append("ocr", $("#ocr").value);
   out.innerHTML = "";
   busy.style.display = "flex";
   $("#busytext").textContent = "Обработка «" + f.name + "» — от 10 с до 2–3 минут на страницу…";
@@ -992,7 +1011,8 @@ function tableView(t){
       Сетка ${t.n_rows} x ${t.n_cols} найдена, но значений в ней нет или почти нет.
       ${(t.notes||[]).map(n=>"<div>— "+esc(n)+"</div>").join("")}
       <div style="margin-top:6px">Что делать: если таблица вставлена в PDF как
-      картинка (скан), включите OCR в настройках выше и загрузите файл снова.
+      картинка (скан), OCR должен быть включён настройкой сервиса (OCRPDF_OCR) —
+      попросите администратора и загрузите файл снова.
       Если это штамп или боковая графа листа с повёрнутым текстом — так и должно
       быть, данных там нет.</div></div>`;
   return `<div class="panel">${notice}
@@ -1234,16 +1254,7 @@ class Handler(BaseHTTPRequestHandler):
             return v[1].decode("utf-8", "replace").strip() if v else default
 
         try:
-            ocr = text("ocr", "none") or "none"
-            if ocr not in ("none", "auto", "hybrid", "rapidocr", "tesseract"):
-                ocr = "none"
-            opts = Options(
-                dpi=max(150, min(600, int(text("dpi", "350") or 350))),
-                low_conf=max(0.0, min(1.0, float(text("low_conf", "0.62") or 0.62))),
-                pages=text("pages"),
-                all_glyphs=text("all_glyphs") == "1",
-                ocr_backend=ocr,
-            )
+            opts = options_from_request(text)
         except ValueError:
             self._json(400, {"error": "некорректные параметры обработки"})
             return

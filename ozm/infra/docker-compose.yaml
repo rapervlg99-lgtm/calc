@@ -318,6 +318,16 @@ services:
     restart: unless-stopped
     expose:
       - "8000"
+    # Настройки распознавания задаёт администратор контура: на странице OCR полей
+    # нет (страницы, DPI, порог проверки, режим OCR, трассировка). Значения
+    # приходят интерполяцией из окружения процесса compose — то есть из
+    # --env-file контура; дефолты и смысл — в ocr/README.md, «Веб-интерфейс».
+    environment:
+      OCRPDF_DPI: ${OCRPDF_DPI:-350}
+      OCRPDF_LOW_CONF: ${OCRPDF_LOW_CONF:-0.62}
+      OCRPDF_OCR: ${OCRPDF_OCR:-auto}
+      # OCRPDF_PAGES: ${OCRPDF_PAGES:-}       # пусто — все листы
+      # OCRPDF_ALL_GLYPHS: ${OCRPDF_ALL_GLYPHS:-0}
     networks:
       - ozm-net
     depends_on:
