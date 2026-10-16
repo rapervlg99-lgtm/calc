@@ -69,11 +69,13 @@ export function applyGroupAttrs<E extends GroupedElement>(group: ElementGroupLik
 }
 
 /**
- * Переносит элементы с указанными uid в группу `target` (в конец), сохраняя их
- * порядок. Возвращает число перенесённых. Атрибуты группы применяются к
- * перенесённым элементам.
+ * Переносит элементы в группу `target` (в конец), сохраняя их порядок.
+ * Элемент ищется и в списке «без группы», и в других группах: конструкция по
+ * умолчанию живёт вне группы, и без первого поиска перенос в группу не находил
+ * бы её вовсе. Возвращает число перенесённых; атрибуты группы применяются к ним.
  */
 export function moveToGroup<E extends GroupedElement>(
+  ungrouped: E[],
   groups: ElementGroupLike<E>[],
   uids: number[],
   target: number
@@ -84,7 +86,7 @@ export function moveToGroup<E extends GroupedElement>(
   const inDst = new Set(dst.elements.map((e) => e._uid))
   const want = uids.filter((u) => !inDst.has(u))
   if (!want.length) return 0
-  const moved = extractElements(groups, want)
+  const moved = [...extractFromList(ungrouped, want), ...extractElements(groups, want)]
   dst.elements.push(...moved)
   applyGroupAttrs(dst, moved)
   return moved.length
@@ -104,22 +106,41 @@ export function moveToUngrouped<E extends GroupedElement>(
   return moved.length
 }
 
-/** Вынимает элементы из групп (порядок сохраняется), ничего не добавляя. */
-function extractElements<E extends GroupedElement>(groups: ElementGroupLike<E>[], uids: number[]): E[] {
+/**
+ * Перенос по номеру блока — то, что выбирает пользователь в списке на карточке
+ * элемента: 0 — «без группы», 1…N — номер группы. Одна точка входа, чтобы
+ * селектор и перетаскивание не разошлись в трактовке номера.
+ */
+export function moveToBlock<E extends GroupedElement>(
+  ungrouped: E[],
+  groups: ElementGroupLike<E>[],
+  uids: number[],
+  ordinal: number
+): number {
+  return ordinal === 0
+    ? moveToUngrouped(ungrouped, groups, uids)
+    : moveToGroup(ungrouped, groups, uids, ordinal - 1)
+}
+
+/** Вынимает элементы из плоского списка (порядок сохраняется). */
+function extractFromList<E extends GroupedElement>(list: E[], uids: number[]): E[] {
   const want = new Set(uids)
   const moved: E[] = []
-  for (const g of groups) {
-    // внутри группы идём с конца (чтобы splice не сдвигал индексы), но
-    // собираем в исходном порядке; группы обходим по возрастанию
-    const part: E[] = []
-    for (let ei = g.elements.length - 1; ei >= 0; ei--) {
-      const el = g.elements[ei]
-      if (el._uid != null && want.has(el._uid)) {
-        part.unshift(el)
-        g.elements.splice(ei, 1)
-      }
+  for (let i = list.length - 1; i >= 0; i--) {
+    const el = list[i]
+    if (el._uid != null && want.has(el._uid)) {
+      moved.unshift(el)
+      list.splice(i, 1)
     }
-    moved.push(...part)
+  }
+  return moved
+}
+
+/** Вынимает элементы из групп (порядок сохраняется), ничего не добавляя. */
+function extractElements<E extends GroupedElement>(groups: ElementGroupLike<E>[], uids: number[]): E[] {
+  const moved: E[] = []
+  for (const g of groups) {
+    moved.push(...extractFromList(g.elements, uids))
   }
   return moved
 }

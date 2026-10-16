@@ -7,8 +7,7 @@ import { mapPrefillPayload } from '../utils/prefillMapper'
 import {
   applyGroupAttrs,
   findElement,
-  moveToGroup,
-  moveToUngrouped,
+  moveToBlock,
   nextGroupTitle,
   nextUid,
   removeGroupKeepElements,
@@ -229,8 +228,7 @@ function removeElement(ordinal: number, ei: number) {
 }
 /** Перенос по ordinal: 0 — «без группы», 1…N — номер группы. */
 function moveByUid(uid: number, ordinal: number) {
-  if (ordinal === 0) moveToUngrouped(form.ungrouped, form.groups, [uid])
-  else moveToGroup(form.groups, [uid], ordinal - 1)
+  moveToBlock(form.ungrouped, form.groups, [uid], ordinal)
 }
 function moveElementTo(el: FormElement, ordinal: number) {
   moveByUid(uidOf(el), ordinal)

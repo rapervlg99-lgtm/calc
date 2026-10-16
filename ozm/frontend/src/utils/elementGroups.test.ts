@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   applyGroupAttrs,
   findElement,
+  moveToBlock,
   moveToGroup,
   moveToUngrouped,
   nextGroupTitle,
@@ -33,21 +34,43 @@ describe('element groups', () => {
 
   it('moves selected elements into a group keeping order', () => {
     const groups = fixture()
-    expect(moveToGroup(groups, [1, 3], 1)).toBe(2)
+    const ungrouped: E[] = []
+    expect(moveToGroup(ungrouped, groups, [1, 3], 1)).toBe(2)
     expect(groups[0].elements.map((e) => e.name)).toEqual(['b'])
     expect(groups[1].elements.map((e) => e.name)).toEqual(['d', 'a', 'c'])
     // элемент, уже находящийся в целевой группе, не дублируется
-    expect(moveToGroup(groups, [4], 1)).toBe(0)
+    expect(moveToGroup(ungrouped, groups, [4], 1)).toBe(0)
     expect(groups[1].elements).toHaveLength(3)
     // несуществующая группа
-    expect(moveToGroup(groups, [2], 5)).toBe(0)
+    expect(moveToGroup(ungrouped, groups, [2], 5)).toBe(0)
+  })
+
+  it('moves a construction from the ungrouped list into a group (регрессия)', () => {
+    // Конструкция по умолчанию живёт вне группы: перенос обязан находить её
+    // именно там — иначе выбор группы в списке на карточке ничего не делал.
+    const groups: ElementGroupLike<E>[] = [{ title: 'Группа 1', quantity: 1, elements: [] }]
+    const ungrouped: E[] = [el('u1', 11), el('u2', 12)]
+    expect(moveToBlock(ungrouped, groups, [11], 1)).toBe(1)
+    expect(ungrouped.map((e) => e.name)).toEqual(['u2'])
+    expect(groups[0].elements.map((e) => e.name)).toEqual(['u1'])
+    // и обратно — в список «без группы»
+    expect(moveToBlock(ungrouped, groups, [11], 0)).toBe(1)
+    expect(ungrouped.map((e) => e.name)).toEqual(['u2', 'u1'])
+    expect(groups[0].elements).toHaveLength(0)
+    // повторный выбор той же группы ничего не меняет
+    expect(moveToBlock(ungrouped, groups, [11], 0)).toBe(0)
+    // атрибуты группы применяются к перенесённой конструкции
+    groups[0].groupHt = 150
+    groups[0].groupFr = '0'
+    expect(moveToBlock(ungrouped, groups, [11], 1)).toBe(1)
+    expect(groups[0].elements[0]).toMatchObject({ name: 'u1', htLevel: 150, frType: '0' })
   })
 
   it('applies group attributes to moved elements and to the whole group', () => {
     const groups = fixture()
     groups[1].groupHt = 90
     groups[1].groupFr = '0'
-    moveToGroup(groups, [1], 1)
+    moveToGroup([], groups, [1], 1)
     const a = groups[1].elements.find((e) => e.name === 'a')!
     expect(a.htLevel).toBe(90)
     expect(a.frType).toBe('0')
