@@ -41,7 +41,10 @@ function deltaColor(r: ElementResult): string {
           <div class="calc-res-chevron" :class="{ 'calc-res-chevron_open': open === r.id }"><TnIcon name="down-s" :size="20" /></div>
           <div class="calc-ellipsis" style="font-weight: var(--font-weight-accent)" :title="r.title">{{ r.title }}</div>
           <div class="calc-ellipsis" style="color: var(--content-secondary-enabled)">{{ shapeLabel(r.shape) }}</div>
-          <div>R{{ r.htLevel }}</div>
+          <!-- Предел огнестойкости есть не у всякой конструкции: у АКЗ его нет,
+               у огнезащитного покрытия он может быть не задан — тогда прочерк,
+               а не «R0». -->
+          <div>{{ r.htLevel ? 'R' + r.htLevel : '—' }}</div>
           <div class="calc-ellipsis" style="color: var(--content-secondary-enabled)">{{ coatLabel(r.coat) }}</div>
           <div style="color: var(--content-secondary-enabled)">{{ liningLabel(r.lining) }}</div>
           <div class="calc-num">{{ fmt(r.dpr, 2) }}</div>

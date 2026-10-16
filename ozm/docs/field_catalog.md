@@ -13,7 +13,7 @@
 | Сортамент | `...rollId` | string | no | dims from roll |
 | Размеры | `...dims` | map | if no roll | h,b,s,t,R,… |
 | Тип конструкции | `...frType` | "0"|"1" | yes | |
-| R | `...htLevel` | number | yes | 15…240 |
+| R | `...htLevel` | number | no | 15…240; не нужен для АКЗ (`coat` 1.5), у огнезащитного покрытия «не задан» → exclusion |
 | Стороны | `...sides.*` | bool | | default all if none |
 | Длина м | `...lengthM` | number | yes | |
 | Кол-во | `...quantity` | number | yes | |

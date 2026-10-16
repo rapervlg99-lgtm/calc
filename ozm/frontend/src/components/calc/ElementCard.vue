@@ -94,6 +94,18 @@ const isTaikor = computed(() => ['2', '3', '4'].includes(props.el.coat))
 const isAkz = computed(() => props.el.coat === '1.5')
 const isOzm = computed(() => props.el.coat === '1')
 
+/** Смена покрытия: АКЗ — не огнезащита, предел огнестойкости для неё не нужен и
+ *  не отправляется (0). Возврат к огнезащитному покрытию подставляет R, если он
+ *  был сброшен, — иначе движок сообщит, что предел не задан. */
+function onCoat(v: string) {
+  props.el.coat = v
+  if (v === '1.5') {
+    props.el.htLevel = 0
+    return
+  }
+  if (!props.el.htLevel) props.el.htLevel = Number(opts('ht_level')[0]?.value) || 60
+}
+
 const sidesCount = computed(() => (['top', 'right', 'bottom', 'left'] as (keyof HeatedSides)[]).filter((k) => props.el.sides[k]).length)
 function toggleSide(k: keyof HeatedSides) {
   props.el.sides[k] = !props.el.sides[k]
@@ -110,7 +122,13 @@ function setDim(k: string, v: number | null) {
 }
 
 const opts = (key: string) => props.dicts.selects[key] || []
-const htOptions = computed(() => opts('ht_level').map((o) => ({ value: o.value, label: o.label })))
+// «не задан» — законный выбор: предел огнестойкости нужен не каждой конструкции
+// (у АКЗ его нет вовсе), а для огнезащитного покрытия движок скажет, что R не
+// задан, вместо молчаливого нуля.
+const htOptions = computed(() => [
+  { value: '', label: 'не задан' },
+  ...opts('ht_level').map((o) => ({ value: o.value, label: o.label }))
+])
 </script>
 
 <template>
@@ -146,7 +164,10 @@ const htOptions = computed(() => opts('ht_level').map((o) => ({ value: o.value, 
             <TnSelect label="ГОСТ" :model-value="gost" :options="gostOptions" @update:model-value="onGost" />
             <TnSearchSelect label="Сортамент" :model-value="rollValue" :options="rollOptions" search-placeholder="Найти марку" @update:model-value="onRollPick" />
             <TnSelect label="Тип конструкции" required :model-value="el.frType" :options="opts('fr_type')" @update:model-value="(v) => (el.frType = v)" />
-            <TnSelect label="Предел огнестойкости R" required :model-value="String(el.htLevel)" :options="htOptions" @update:model-value="(v) => (el.htLevel = Number(v))" />
+            <!-- Предел огнестойкости не обязателен: у АКЗ его нет вовсе (поле
+                 скрыто), у огнезащитного покрытия «не задан» — это осознанный
+                 выбор, движок сообщит о нём отдельной строкой. -->
+            <TnSelect v-if="!isAkz" label="Предел огнестойкости R" :model-value="el.htLevel ? String(el.htLevel) : ''" :options="htOptions" @update:model-value="(v) => (el.htLevel = v === '' ? 0 : Number(v))" />
           </div>
 
           <div v-if="manual" class="calc-grid-5">
@@ -161,7 +182,7 @@ const htOptions = computed(() => opts('ht_level').map((o) => ({ value: o.value, 
           <div class="calc-grid-4">
             <TnNumberInput label="Длина, м" required :model-value="el.lengthM" :error="errors?.length" @update:model-value="(v) => (el.lengthM = v ?? 0)" />
             <TnNumberInput label="Количество, шт" required integer :model-value="el.quantity" :error="errors?.quantity" @update:model-value="(v) => (el.quantity = v ?? 0)" />
-            <TnSelect label="Покрытие" required :model-value="el.coat" :options="opts('fr_coat')" @update:model-value="(v) => (el.coat = v)" />
+            <TnSelect label="Покрытие" required :model-value="el.coat" :options="opts('fr_coat')" @update:model-value="onCoat" />
             <TnSelect v-if="isOzm" label="Метод нанесения" required :model-value="el.method" :options="opts('fr_method')" @update:model-value="(v) => (el.method = v)" />
           </div>
 
@@ -172,14 +193,14 @@ const htOptions = computed(() => opts('ht_level').map((o) => ({ value: o.value, 
             <TnCheckbox :model-value="!!el.primer" label="TAIKOR Primer 150" @update:model-value="(v) => (el.primer = v)" />
             <TnCheckbox :model-value="!!el.enamel" label="TAIKOR Top 425 (финишная эмаль)" @update:model-value="(v) => (el.enamel = v)" />
           </div>
-          <div v-if="isAkz" class="calc-note calc-note_warn">
+          <div v-if="isAkz" class="calc-note">
             <TnIcon name="info" :size="20" />
-            <span>АКЗ — только антикоррозионная защита. Толщина огнезащиты для этого элемента не рассчитывается, требуется ручной ввод в ведомости.</span>
+            <span>АКЗ — только антикоррозионная защита: конструкция входит в расчёт со своей площадью, огнезащитный материал для неё не считается, предел огнестойкости не нужен.</span>
           </div>
 
           <div v-if="result" class="calc-el-result">
             <span>δпр <b>{{ fmt(result.dpr, 2) }} мм</b></span>
-            <span>δ <b>{{ resultDelta(result) }}{{ result.exclusion ? '' : ' мм' }}</b></span>
+            <span>δ <b>{{ resultDelta(result) }}{{ result.exclusion || isAkz ? '' : ' мм' }}</b></span>
             <span>S <b>{{ fmt(result.areaM2, 2) }} м²</b></span>
             <span>Расход <b>{{ resultOutput(result) }}</b></span>
             <span v-if="result.exclusion" class="calc-note" :class="isAkz ? 'calc-note_warn' : 'calc-note_error'" style="width: 100%">

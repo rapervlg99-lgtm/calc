@@ -361,8 +361,11 @@ const messages = computed(() =>
       id: r.id,
       title: r.title,
       text: r.exclusion || '',
-      short: r.coat === '1.5' ? 'АКЗ — ручной ввод толщины' : 'Недостижимый предел при текущем δпр',
-      color: r.coat === '1.5' ? ORANGE : RED
+      // АКЗ сюда не попадает: конструкция без огнезащиты считается без ошибки.
+      short: r.exclusion?.startsWith('не задан предел')
+        ? 'Не задан предел огнестойкости R'
+        : 'Недостижимый предел при текущем δпр',
+      color: RED
     }))
 )
 const totalLength = computed(() => {

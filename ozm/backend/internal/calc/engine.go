@@ -122,7 +122,18 @@ func (e *Engine) calcElement(groupID, elID string, el models.ElementInput, group
 	qtyMul := el.Quantity * groupQty
 
 	if coatN == 1.5 {
-		er.Exclusion = "АКЗ: требуется ручной ввод состава антикоррозионной защиты"
+		// АКЗ — только антикоррозионная защита: конструкции с ней входят в расчёт
+		// (в ведомости видно, сколько красить), но огнезащитный материал для них
+		// не считается, и это не ошибка и не исключение. Состав АКЗ вводится
+		// вручную, предел огнестойкости для неё не нужен.
+		s := pi / 1000 * el.LengthM
+		er.AreaM2 = round3(s * qtyMul)
+		trace = append(trace, fmt.Sprintf("%s: АКЗ — огнезащитный материал не считается, площадь окраски %.2f м²", elID, er.AreaM2))
+		return er, lines, trace
+	}
+
+	if el.HtLevel <= 0 {
+		er.Exclusion = "не задан предел огнестойкости R — укажите его для огнезащитного покрытия"
 		return er, lines, trace
 	}
 

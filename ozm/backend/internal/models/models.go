@@ -97,21 +97,24 @@ type HeatedSides struct {
 }
 
 type ElementInput struct {
-	ID       string             `json:"id,omitempty"`
-	Title    string             `json:"title,omitempty"`
-	Shape    string             `json:"shape" validate:"required"`
-	RollID   string             `json:"rollId,omitempty"`
-	Dims     map[string]float64 `json:"dims,omitempty"`
-	FrType   string             `json:"frType" validate:"required"` // "1" bearing / "0" self
-	HtLevel  float64            `json:"htLevel" validate:"required,min=15,max=240"`
-	Sides    HeatedSides        `json:"sides"`
-	LengthM  float64            `json:"lengthM" validate:"required,gt=0"`
-	Quantity float64            `json:"quantity" validate:"required,gt=0"`
-	Coat     string             `json:"coat" validate:"required"`             // "1","2","3","4","1.5"
-	Method   string             `json:"method" validate:"required,oneof=0 1"` // 0 contour 1 box
-	Primer   bool               `json:"primer"`
-	Enamel   bool               `json:"enamel"`
-	Decor    bool               `json:"decor"`
+	ID     string             `json:"id,omitempty"`
+	Title  string             `json:"title,omitempty"`
+	Shape  string             `json:"shape" validate:"required"`
+	RollID string             `json:"rollId,omitempty"`
+	Dims   map[string]float64 `json:"dims,omitempty"`
+	FrType string             `json:"frType" validate:"required"` // "1" bearing / "0" self
+	// Предел огнестойкости не обязателен: у конструкции только с антикоррозионной
+	// защитой (coat "1.5") его нет вовсе, а для огнезащитных покрытий движок сам
+	// скажет, что R не задан. omitempty пропускает min/max при нулевом значении.
+	HtLevel  float64     `json:"htLevel" validate:"omitempty,min=15,max=240"`
+	Sides    HeatedSides `json:"sides"`
+	LengthM  float64     `json:"lengthM" validate:"required,gt=0"`
+	Quantity float64     `json:"quantity" validate:"required,gt=0"`
+	Coat     string      `json:"coat" validate:"required"`             // "1","2","3","4","1.5"
+	Method   string      `json:"method" validate:"required,oneof=0 1"` // 0 contour 1 box
+	Primer   bool        `json:"primer"`
+	Enamel   bool        `json:"enamel"`
+	Decor    bool        `json:"decor"`
 }
 
 type GroupInput struct {
