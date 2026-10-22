@@ -72,7 +72,7 @@ func main() {
 	}
 
 	engine := calc.New(store)
-	exporter := export.New()
+	exporter := export.New(store)
 	origins := strings.Split(cfgEnv.AllowedOrigins, ",")
 	srv := api.New(store, engine, exporter, api.Options{
 		AllowedOrigins: origins,

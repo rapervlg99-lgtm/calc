@@ -121,3 +121,8 @@ node backend/scripts/sync-calclab-sortament.mjs D:\dev\calclab.pro --write
 ## Golden
 
 `backend/internal/calc/testdata/golden/*.json` — расширять матрицей семья×coat×method×R.
+
+## Выгрузка спецификации
+
+Excel-спецификация по системам (листы TAIKOR / АКЗ / ТЕХНО ОЗМ+ОЗБ, блок цен,
+формулы расхода и стоимости, ИТОГО) — см. `docs/report_xlsx.md`.
