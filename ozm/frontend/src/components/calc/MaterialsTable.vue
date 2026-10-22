@@ -6,6 +6,8 @@ import { fmt } from '../../utils/calcView'
 defineProps<{ rows: MaterialLine[] }>()
 
 function digits(m: MaterialLine): number {
+  // Точность печати берём из справочника материалов (легаси DC r), иначе — по единице.
+  if (typeof m.decimals === 'number') return m.decimals
   if (m.unit === 'шт') return 0
   if (m.unit === 'м³') return 3
   return 1

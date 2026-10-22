@@ -238,16 +238,88 @@ def default_selects():
     }
 
 
+def _attr(attrs: str, name: str) -> str:
+    m = re.search(name + r'="([^"]*)"', attrs)
+    return m.group(1) if m else ""
+
+
+def _flag(typ: str) -> str:
+    return {"fr_decor": "decor", "fr_enamel": "enamel"}.get(typ, "")
+
+
+def _round(r: str):
+    dot = r.find(".")
+    return sum(1 for ch in r[dot + 1:] if ch in "#0") if dot >= 0 else 0
+
+
+def parse_materials(text: str):
+    """Материалы из блока <RT> выгрузки DC: расходы и метаданные (base, flag,
+    qMin, layerMm, output, sort, round) — их читает движок для ведомости и отчётов.
+    Раньше список был зашит в код, и метаданные терялись."""
+    start, end = text.find("<RT>"), text.find("</RT>")
+    if start < 0 or end <= start:
+        return default_materials()
+    block = text[start:end]
+    out = []
+    for mid in ("OZM", "OZB", "KCer", "KVer", "KAnk", "T150p", "Taikor", "T425t"):
+        i = block.find("<" + mid)
+        if i < 0:
+            continue
+        rest = block[i + len(mid) + 1:]
+        gt = rest.find(">")
+        if gt < 0:
+            continue
+        attrs = rest[:gt]
+        value = ""
+        if not attrs.rstrip().endswith("/"):
+            body = rest[gt + 1:]
+            j = body.find("</" + mid + ">")
+            if j >= 0:
+                value = body[:j].strip()
+            if "<" in value:  # вложенные строки (например, R у ОЗБ)
+                value = ""
+        item = {
+            "id": mid,
+            "title": _attr(attrs, "title"),
+            "unit": _attr(attrs, "unit"),
+            "rate": _atof(value),
+        }
+        q, flag, qmin = _atof(_attr(attrs, "q")), _flag(_attr(attrs, "type")), _atof(_attr(attrs, "q_min"))
+        layer, out_kind = _atof(_attr(attrs, "δ")), _attr(attrs, "f")
+        sort, rnd = int(_atof(_attr(attrs, "sort"))), _round(_attr(attrs, "r"))
+        if q:
+            item["q"] = q
+        if flag:
+            item["flag"] = flag
+        if qmin:
+            item["qMin"] = qmin
+        if layer:
+            item["layerMm"] = layer
+        if out_kind:
+            item["output"] = out_kind
+        if sort:
+            item["sort"] = sort
+        if _attr(attrs, "r"):
+            item["round"] = rnd
+        base = _attr(attrs, "base")
+        if base:
+            item["base"] = base
+        # ключи в том же порядке, что и в dicts/materials_rt.json
+        order = ("id", "title", "unit", "q", "rate", "base", "flag", "qMin", "layerMm", "output", "sort", "round")
+        out.append({k: item[k] for k in order if k in item})
+    return out
+
+
 def default_materials():
     return [
-        {"id": "OZM", "title": "ТЕХНО ОЗМ", "unit": "м³", "q": 1.25},
-        {"id": "OZB", "title": "ТЕХНО ОЗБ", "unit": "м³", "q": 1.03},
-        {"id": "KCer", "title": "Клей Ceresit CT 190", "unit": "кг", "rate": 1.2},
-        {"id": "KVer", "title": "Штукатурка Ceresit", "unit": "кг", "rate": 3.2},
-        {"id": "KAnk", "title": "Металлический анкер с шайбой", "unit": "шт", "rate": 7},
-        {"id": "T150p", "title": "TAIKOR Primer 150", "unit": "кг", "rate": 0.230},
-        {"id": "Taikor", "title": "TAIKOR FP", "unit": "кг"},
-        {"id": "T425t", "title": "TAIKOR Top 425", "unit": "кг", "rate": 0.170},
+        {"id": "OZM", "title": "ТЕХНО ОЗМ", "unit": "м³", "q": 1.25, "output": "V", "round": 3},
+        {"id": "OZB", "title": "ТЕХНО ОЗБ", "unit": "м³", "q": 1.03, "output": "V", "round": 3},
+        {"id": "KCer", "title": "Клей Ceresit CT 190", "unit": "кг", "rate": 1.2, "base": "kv", "round": 2},
+        {"id": "KVer", "title": "Штукатурка Ceresit", "unit": "кг", "rate": 3.2, "base": "kv", "flag": "decor", "qMin": 1.5, "round": 2},
+        {"id": "KAnk", "title": "Металлический анкер с шайбой", "unit": "шт", "rate": 7, "round": 0},
+        {"id": "T150p", "title": "TAIKOR Primer 150", "unit": "кг", "rate": 0.230, "base": "taikor", "layerMm": 0.1, "sort": 1, "round": 2},
+        {"id": "Taikor", "title": "TAIKOR FP", "unit": "кг", "output": "M", "sort": 2, "round": 2},
+        {"id": "T425t", "title": "TAIKOR Top 425", "unit": "кг", "rate": 0.170, "base": "taikor", "layerMm": 0.06, "sort": 3, "flag": "enamel", "round": 2},
     ]
 
 
@@ -258,7 +330,7 @@ def main() -> int:
     roll = parse_roll(DC_DIR / "roll.xml", DC_DIR / "DC.xml")
     profiles = default_profiles()
     selects = default_selects()
-    materials = default_materials()
+    materials = parse_materials((DC_DIR / "DC.xml").read_text(encoding="utf-8"))
     cfg = {
         "taikorQ": 1.43,
         "ozmQ": 1.25,
@@ -275,7 +347,7 @@ def main() -> int:
         ("materials_rt.json", materials),
         ("calculation_config.json", cfg),
     ]:
-        (OUT / name).write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        (OUT / name).write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     report = (
         f"# DC extract report\n\n"
         f"- t500 rows: {len(t500)}\n"

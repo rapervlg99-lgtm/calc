@@ -16,10 +16,10 @@ import (
 )
 
 var (
-	attrRe = regexp.MustCompile(`([\w-]+)=['"]([^'"]*)['"]`)
+	attrRe      = regexp.MustCompile(`([\w-]+)=['"]([^'"]*)['"]`)
 	rollTokenRe = regexp.MustCompile(`(?i)<select\b([^>]*)>|</select>|<o\b([^>]*)>([^<]*)</o>|<o\b([^>]*)\s*/>`)
-	picCodeRe = regexp.MustCompile(`picture="([^"]+)"[^>]*\bcode="(\d+)"`)
-	codePicRe = regexp.MustCompile(`\bcode="(\d+)"[^>]*picture="([^"]+)"`)
+	picCodeRe   = regexp.MustCompile(`picture="([^"]+)"[^>]*\bcode="(\d+)"`)
+	codePicRe   = regexp.MustCompile(`\bcode="(\d+)"[^>]*picture="([^"]+)"`)
 )
 
 func main() {
@@ -78,6 +78,8 @@ func mustWrite(dir, name string, v any) {
 	if err != nil {
 		fatal(err)
 	}
+	// перевод строки в конце файла — как у остальных справочников и у ruff/gofmt
+	b = append(b, '\n')
 	if err := os.WriteFile(filepath.Join(dir, name), b, 0o644); err != nil {
 		fatal(err)
 	}
@@ -125,8 +127,8 @@ func parseT500(path string) ([]models.T500Row, error) {
 type x500XML struct {
 	Coats []struct {
 		Rs []struct {
-			Min   string `xml:"min,attr"`
-			Heat  *struct {
+			Min  string `xml:"min,attr"`
+			Heat *struct {
 				Delta string `xml:"δ,attr"`
 				Rate  string `xml:"rate,attr"`
 			} `xml:"heat"`
@@ -295,7 +297,7 @@ func parseDC(path string) ([]models.ProfileFamily, map[string][]models.SelectOpt
 	// Lightweight string/XML hybrid parse for OS + SL + RT sections.
 	profiles := defaultProfiles()
 	selects := defaultSelects()
-	materials := defaultMaterials()
+	materials := parseMaterials(string(data))
 	cfg := models.CalcConfig{
 		TaikorQ: 1.43, OzmQ: 1.25, OzbQ: 1.03, SteelDensity: 7850,
 		OzbByR: map[string]float64{"180": 50, "240": 40},
@@ -419,15 +421,108 @@ func defaultSelects() map[string][]models.SelectOption {
 	}
 }
 
+// parseMaterials читает блок <RT>…</RT> выгрузки DC: материалы с расходами и
+// метаданными (база расчёта, привязка к флагу, минимальный расход, толщина слоя,
+// порядок в ведомости, точность печати). Раньше список был зашит в код, и
+// метаданные DC терялись — ведомость не знала ни порядка материалов, ни толщины
+// слоя. defaultMaterials() остаётся запасным вариантом, если блока нет.
+func parseMaterials(text string) []models.MaterialRT {
+	start := strings.Index(text, "<RT>")
+	end := strings.Index(text, "</RT>")
+	if start < 0 || end <= start {
+		return defaultMaterials()
+	}
+	block := text[start:end]
+	ids := []string{"OZM", "OZB", "KCer", "KVer", "KAnk", "T150p", "Taikor", "T425t"}
+	out := make([]models.MaterialRT, 0, len(ids))
+	for _, id := range ids {
+		head := "<" + id
+		i := strings.Index(block, head)
+		if i < 0 {
+			continue
+		}
+		rest := block[i+len(head):]
+		gt := strings.Index(rest, ">")
+		if gt < 0 {
+			continue
+		}
+		attrs := rest[:gt]
+		value := ""
+		if !strings.HasSuffix(attrs, "/") {
+			body := rest[gt+1:]
+			if j := strings.Index(body, "</"+id+">"); j >= 0 {
+				value = strings.TrimSpace(body[:j])
+			}
+			if strings.Contains(value, "<") { // вложенные строки (например, R у ОЗБ)
+				value = ""
+			}
+		}
+		out = append(out, models.MaterialRT{
+			ID:      id,
+			Title:   attrStr(attrs, "title"),
+			Unit:    attrStr(attrs, "unit"),
+			Q:       extractAttr(attrs, "q"),
+			Rate:    atof(value),
+			Base:    attrStr(attrs, "base"),
+			Flag:    flagOf(attrStr(attrs, "type")),
+			QMin:    extractAttr(attrs, "q_min"),
+			LayerMm: extractAttr(attrs, "δ"),
+			Output:  attrStr(attrs, "f"),
+			Sort:    int(extractAttr(attrs, "sort")),
+			Round:   roundOf(attrStr(attrs, "r")),
+		})
+	}
+	return out
+}
+
+// attrStr — строковый атрибут тега (пустая строка, если атрибута нет).
+func attrStr(attrs, name string) string {
+	key := name + `="`
+	i := strings.Index(attrs, key)
+	if i < 0 {
+		return ""
+	}
+	rest := attrs[i+len(key):]
+	j := strings.Index(rest, `"`)
+	if j < 0 {
+		return ""
+	}
+	return rest[:j]
+}
+
+// flagOf переводит type из DC в флаг элемента, при котором материал считается.
+func flagOf(typ string) string {
+	switch typ {
+	case "fr_decor":
+		return "decor"
+	case "fr_enamel":
+		return "enamel"
+	}
+	return ""
+}
+
+// roundOf переводит формат DC r="0.###" в число знаков после запятой.
+func roundOf(r string) *int {
+	n := 0
+	if dot := strings.Index(r, "."); dot >= 0 {
+		for _, ch := range r[dot+1:] {
+			if ch == '#' || ch == '0' {
+				n++
+			}
+		}
+	}
+	return &n
+}
+
 func defaultMaterials() []models.MaterialRT {
 	return []models.MaterialRT{
 		{ID: "OZM", Title: "ТЕХНО ОЗМ", Unit: "м³", Q: 1.25},
 		{ID: "OZB", Title: "ТЕХНО ОЗБ", Unit: "м³", Q: 1.03},
 		{ID: "KCer", Title: "Клей Ceresit CT 190", Unit: "кг", Rate: 1.2},
-		{ID: "KVer", Title: "Штукатурка Ceresit", Unit: "кг", Rate: 3.2},
+		{ID: "KVer", Title: "Штукатурка Ceresit", Unit: "кг", Rate: 3.2, Flag: "decor", QMin: 1.5},
 		{ID: "KAnk", Title: "Металлический анкер с шайбой", Unit: "шт", Rate: 7},
-		{ID: "T150p", Title: "TAIKOR Primer 150", Unit: "кг", Rate: 0.230},
-		{ID: "Taikor", Title: "TAIKOR FP", Unit: "кг"},
-		{ID: "T425t", Title: "TAIKOR Top 425", Unit: "кг", Rate: 0.170},
+		{ID: "T150p", Title: "TAIKOR Primer 150", Unit: "кг", Rate: 0.230, Base: "taikor", LayerMm: 0.1, Sort: 1},
+		{ID: "Taikor", Title: "TAIKOR FP", Unit: "кг", Output: "M", Sort: 2},
+		{ID: "T425t", Title: "TAIKOR Top 425", Unit: "кг", Rate: 0.170, Base: "taikor", LayerMm: 0.06, Sort: 3, Flag: "enamel"},
 	}
 }

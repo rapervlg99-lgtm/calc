@@ -62,13 +62,27 @@ type X500Coat struct {
 }
 
 type MaterialRT struct {
-	ID    string         `json:"id"`
-	Title string         `json:"title"`
-	Unit  string         `json:"unit"`
-	Q     float64        `json:"q,omitempty"`
-	Rate  float64        `json:"rate,omitempty"`
-	Delta float64        `json:"delta,omitempty"`
-	Extra map[string]any `json:"extra,omitempty"`
+	ID    string  `json:"id"`
+	Title string  `json:"title"`
+	Unit  string  `json:"unit"`
+	Q     float64 `json:"q,omitempty"`
+	Rate  float64 `json:"rate,omitempty"`
+	Delta float64 `json:"delta,omitempty"`
+	// Метаданные из легаси-выгрузки DC (<RT>): нужны ведомости и отчётам.
+	// Base — расчётная база: "kv" расход на м², "taikor" на массу TAIKOR.
+	// Flag — материал считается только при включённом флаге элемента
+	// (decor — декоративное покрытие, enamel — финишная эмаль).
+	// QMin — минимальный расход на м² (DC q_min), LayerMm — толщина слоя (DC δ),
+	// Output — "V" объём / "M" масса (DC f), Sort — порядок в ведомости (DC sort),
+	// Round — знаков после запятой при печати (DC r).
+	Base    string         `json:"base,omitempty"`
+	Flag    string         `json:"flag,omitempty"`
+	QMin    float64        `json:"qMin,omitempty"`
+	LayerMm float64        `json:"layerMm,omitempty"`
+	Output  string         `json:"output,omitempty"`
+	Sort    int            `json:"sort,omitempty"`
+	Round   *int           `json:"round,omitempty"`
+	Extra   map[string]any `json:"extra,omitempty"`
 }
 
 type CalcConfig struct {
@@ -150,6 +164,11 @@ type MaterialLine struct {
 	TotalCents      int64   `json:"totalCents"`
 	SourceElementID string  `json:"sourceElementId,omitempty"`
 	SourceGroupID   string  `json:"sourceGroupId,omitempty"`
+	// Для ведомости и выгрузок: толщина слоя материала (мм) из справочника и
+	// точность печати количества. Decimals == nil — точность по единице измерения,
+	// 0 — целые (анкеры).
+	LayerMm  float64 `json:"layerMm,omitempty"`
+	Decimals *int    `json:"decimals,omitempty"`
 }
 
 type ElementResult struct {

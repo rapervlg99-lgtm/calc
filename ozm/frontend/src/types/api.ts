@@ -53,6 +53,10 @@ export interface MaterialLine {
   unitPriceCents: number; totalCents: number
   sourceElementId?: string
   sourceGroupId?: string
+  /** толщина слоя материала, мм (из справочника материалов) */
+  layerMm?: number
+  /** знаков после запятой при печати (0 — целые); нет — по единице измерения */
+  decimals?: number
 }
 export interface CalcResponse {
   id?: string; inputs: CalcRequest

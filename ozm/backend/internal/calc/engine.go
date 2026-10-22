@@ -3,6 +3,7 @@ package calc
 import (
 	"fmt"
 	"math"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -18,6 +19,65 @@ func New(cfg *config.Store) *Engine {
 	return &Engine{cfg: cfg}
 }
 
+// material — запись справочника материалов для строки ведомости. Идентификаторы
+// TAIKOR идут с суффиксом покрытия (Taikor_2 … Taikor_4) и с «Taikor_Extra»,
+// поэтому ищем по базовому имени.
+func (e *Engine) material(id string) *models.MaterialRT {
+	base := materialBaseID(id)
+	for i := range e.cfg.Materials {
+		if e.cfg.Materials[i].ID == base {
+			return &e.cfg.Materials[i]
+		}
+	}
+	return nil
+}
+
+func materialBaseID(id string) string {
+	if strings.HasPrefix(id, "Taikor_") {
+		return "Taikor"
+	}
+	return id
+}
+
+// rateOf — расход материала на единицу расчётной базы: из справочника, но не
+// ниже минимального расхода q_min из легаси-выгрузки (у штукатурки — 1.5).
+func rateOf(m *models.MaterialRT) float64 {
+	if m == nil {
+		return 0
+	}
+	if m.QMin > m.Rate {
+		return m.QMin
+	}
+	return m.Rate
+}
+
+// materialLine собирает строку ведомости: название, единицу, толщину слоя и
+// точность печати берём из справочника, количество считает вызывающая сторона.
+// title == "" — название из справочника (у ОЗБ оно зависит от предела R).
+func (e *Engine) materialLine(id, title, groupID, elID string, qty float64) models.MaterialLine {
+	ln := models.MaterialLine{
+		ID: id, Title: title, Quantity: qty,
+		SourceElementID: elID, SourceGroupID: groupID,
+	}
+	if m := e.material(id); m != nil {
+		if ln.Title == "" {
+			ln.Title = m.Title
+		}
+		ln.Unit = m.Unit
+		ln.LayerMm = m.LayerMm
+		ln.Decimals = m.Round
+	}
+	return ln
+}
+
+// sortOf — порядок материала в ведомости (DC sort), 0 — без порядка.
+func (e *Engine) sortOf(id string) int {
+	if m := e.material(id); m != nil {
+		return m.Sort
+	}
+	return 0
+}
+
 func (e *Engine) Calculate(req models.CalcRequest) (models.CalcResponse, error) {
 	resp := models.CalcResponse{
 		Inputs:    stripPriceEdits(req),
@@ -26,6 +86,7 @@ func (e *Engine) Calculate(req models.CalcRequest) (models.CalcResponse, error) 
 		Trace:     nil,
 	}
 	matAgg := map[string]*models.MaterialLine{}
+	var matOrder []string
 
 	for gi, g := range req.Groups {
 		gQty := g.Quantity
@@ -51,6 +112,7 @@ func (e *Engine) Calculate(req models.CalcRequest) (models.CalcResponse, error) 
 				} else {
 					cp := ln
 					matAgg[key] = &cp
+					matOrder = append(matOrder, key)
 				}
 			}
 		}
@@ -65,12 +127,17 @@ func (e *Engine) Calculate(req models.CalcRequest) (models.CalcResponse, error) 
 			} else {
 				cp := ln
 				matAgg[ln.ID] = &cp
+				matOrder = append(matOrder, ln.ID)
 			}
 		}
 	}
 
 	var total int64
-	for _, m := range matAgg {
+	// Порядок ведомости — по справочнику (DC sort): материалы без порядка идут
+	// в порядке появления, а внутри одинакового sort сохраняется порядок
+	// появления — поэтому собираем по matOrder и сортируем стабильно.
+	for _, id := range matOrder {
+		m := matAgg[id]
 		price := int64(0)
 		if req.MaterialPriceEditsCents != nil {
 			if p, ok := req.MaterialPriceEditsCents[m.ID]; ok {
@@ -82,6 +149,9 @@ func (e *Engine) Calculate(req models.CalcRequest) (models.CalcResponse, error) 
 		total += m.TotalCents
 		resp.Materials = append(resp.Materials, *m)
 	}
+	sort.SliceStable(resp.Materials, func(i, j int) bool {
+		return e.sortOf(resp.Materials[i].ID) < e.sortOf(resp.Materials[j].ID)
+	})
 	resp.Totals = models.Totals{MaterialsCents: total, GrandCents: total}
 	return resp, nil
 }
@@ -152,18 +222,19 @@ func (e *Engine) calcElement(groupID, elID string, el models.ElementInput, group
 		}
 		vol := sv * (delta / 1000) * q
 		er.Volume = round3(vol * qtyMul)
-		lines = append(lines, models.MaterialLine{
-			ID: "OZM", Title: "ТЕХНО ОЗМ", Unit: "м³", Quantity: er.Volume,
-			SourceElementID: elID, SourceGroupID: groupID,
-		})
-		// glue / plaster / anchors on Sm / Lh
+		lines = append(lines, e.materialLine("OZM", "", groupID, elID, er.Volume))
+		// клей и анкеры — по площади огнезащиты, штукатурка — по площади
+		// облицовки; расход и толщина слоя берутся из справочника материалов
 		lh := claddingPerimeter(lining, dims, el.Sides, el.Shape, delta)
 		sh := lh / 1000 * el.LengthM
-		lines = append(lines,
-			models.MaterialLine{ID: "KCer", Title: "Клей Ceresit CT 190", Unit: "кг", Quantity: round3(sm * 1.2 * qtyMul), SourceElementID: elID, SourceGroupID: groupID},
-			models.MaterialLine{ID: "KVer", Title: "Штукатурка Ceresit", Unit: "кг", Quantity: round3(sh * 3.2 * qtyMul), SourceElementID: elID, SourceGroupID: groupID},
-			models.MaterialLine{ID: "KAnk", Title: "Металлический анкер с шайбой", Unit: "шт", Quantity: round3(sm * 7 * qtyMul), SourceElementID: elID, SourceGroupID: groupID},
-		)
+		lines = append(lines, e.materialLine("KCer", "", groupID, elID, round3(sm*rateOf(e.material("KCer"))*qtyMul)))
+		// штукатурка — декоративное покрытие: в легаси-выгрузке
+		// <KVer type="fr_decor">, поэтому без галочки «Декоративное покрытие»
+		// материала в ведомости нет (ОЗБ считается всегда — там флага нет)
+		if el.Decor {
+			lines = append(lines, e.materialLine("KVer", "", groupID, elID, round3(sh*rateOf(e.material("KVer"))*qtyMul)))
+		}
+		lines = append(lines, e.materialLine("KAnk", "", groupID, elID, round3(sm*rateOf(e.material("KAnk"))*qtyMul)))
 		trace = append(trace, fmt.Sprintf("%s: δ=%.0f lining=%d Sv→V=%.3f", elID, delta, lining, er.Volume))
 		return er, lines, trace
 	}
@@ -187,28 +258,16 @@ func (e *Engine) calcElement(groupID, elID string, el models.ElementInput, group
 	if coatN == 2 {
 		title = "TAIKOR FP Epoxy"
 	}
-	lines = append(lines, models.MaterialLine{
-		ID: fmt.Sprintf("Taikor_%s", el.Coat), Title: title, Unit: "кг", Quantity: er.Volume,
-		SourceElementID: elID, SourceGroupID: groupID,
-	})
+	lines = append(lines, e.materialLine(fmt.Sprintf("Taikor_%s", el.Coat), title, groupID, elID, er.Volume))
 	if heat != nil {
 		heatMass := round3(s * heat.Rate * tq * qtyMul)
-		lines = append(lines, models.MaterialLine{
-			ID: "Taikor_Extra", Title: "TAIKOR FP Extra", Unit: "кг", Quantity: heatMass,
-			SourceElementID: elID, SourceGroupID: groupID,
-		})
+		lines = append(lines, e.materialLine("Taikor_Extra", "TAIKOR FP Extra", groupID, elID, heatMass))
 	}
 	if el.Primer {
-		lines = append(lines, models.MaterialLine{
-			ID: "T150p", Title: "TAIKOR Primer 150", Unit: "кг", Quantity: round3(s * 0.230 * qtyMul),
-			SourceElementID: elID, SourceGroupID: groupID,
-		})
+		lines = append(lines, e.materialLine("T150p", "", groupID, elID, round3(s*rateOf(e.material("T150p"))*qtyMul)))
 	}
 	if el.Enamel {
-		lines = append(lines, models.MaterialLine{
-			ID: "T425t", Title: "TAIKOR Top 425", Unit: "кг", Quantity: round3(s * 0.170 * qtyMul),
-			SourceElementID: elID, SourceGroupID: groupID,
-		})
+		lines = append(lines, e.materialLine("T425t", "", groupID, elID, round3(s*rateOf(e.material("T425t"))*qtyMul)))
 	}
 	trace = append(trace, fmt.Sprintf("%s: TAIKOR δ=%.2f rate=%.3f mass=%.3f", elID, delta, rate, er.Volume))
 	return er, lines, trace
@@ -234,9 +293,9 @@ func (e *Engine) calcBeton(b models.BetonInput) ([]models.MaterialLine, []string
 		title = "ТЕХНО ОЗБ 110"
 	}
 	lines := []models.MaterialLine{
-		{ID: "OZB", Title: title, Unit: "м³", Quantity: round3(vol)},
-		{ID: "KVer", Title: "Штукатурка Ceresit", Unit: "кг", Quantity: round3(b.AreaM2 * 3.2)},
-		{ID: "KAnk", Title: "Металлический анкер с шайбой", Unit: "шт", Quantity: round3(b.AreaM2 * 7)},
+		e.materialLine("OZB", title, "", "", round3(vol)),
+		e.materialLine("KVer", "", "", "", round3(b.AreaM2*rateOf(e.material("KVer")))),
+		e.materialLine("KAnk", "", "", "", round3(b.AreaM2*rateOf(e.material("KAnk")))),
 	}
 	return lines, []string{fmt.Sprintf("beton: S=%.2f R%.0f δ=%.0f V=%.3f", b.AreaM2, b.HtLevel, delta, vol)}
 }

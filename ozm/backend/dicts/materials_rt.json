@@ -3,47 +3,70 @@
     "id": "OZM",
     "title": "ТЕХНО ОЗМ",
     "unit": "м³",
-    "q": 1.25
+    "q": 1.25,
+    "output": "V",
+    "round": 3
   },
   {
     "id": "OZB",
     "title": "ТЕХНО ОЗБ",
     "unit": "м³",
-    "q": 1.03
+    "q": 1.03,
+    "output": "V",
+    "round": 3
   },
   {
     "id": "KCer",
     "title": "Клей Ceresit CT 190",
     "unit": "кг",
-    "rate": 1.2
+    "rate": 1.2,
+    "base": "kv",
+    "round": 2
   },
   {
     "id": "KVer",
     "title": "Штукатурка Ceresit",
     "unit": "кг",
-    "rate": 3.2
+    "rate": 3.2,
+    "base": "kv",
+    "flag": "decor",
+    "qMin": 1.5,
+    "round": 2
   },
   {
     "id": "KAnk",
     "title": "Металлический анкер с шайбой",
     "unit": "шт",
-    "rate": 7
+    "rate": 7,
+    "round": 0
   },
   {
     "id": "T150p",
     "title": "TAIKOR Primer 150",
     "unit": "кг",
-    "rate": 0.23
+    "rate": 0.23,
+    "base": "taikor",
+    "layerMm": 0.1,
+    "sort": 1,
+    "round": 2
   },
   {
     "id": "Taikor",
     "title": "TAIKOR FP",
-    "unit": "кг"
+    "unit": "кг",
+    "output": "M",
+    "sort": 2,
+    "round": 2
   },
   {
     "id": "T425t",
     "title": "TAIKOR Top 425",
     "unit": "кг",
-    "rate": 0.17
+    "rate": 0.17,
+    "base": "taikor",
+    "flag": "enamel",
+    "layerMm": 0.06,
+    "sort": 3,
+    "round": 2
   }
 ]
