@@ -149,7 +149,16 @@
 .calc-trace div { font-variant-numeric: tabular-nums; word-break: break-word; }
 
 /* ведомость (DS table) */
+/* Ведомость материалов: контейнеры и строки DS-таблицы по умолчанию
+   width: fit-content, и каждая строка получала свою ширину — колонки «Ед. изм.»
+   и «Количество» съезжали. Прижимаем к ширине таблицы, чтобы колонки стояли
+   ровно и в шапке, и в строках. */
+.calc-bom .tn-table__header-container,
+.calc-bom .tn-table__body-container,
+.calc-bom .tn-table__header-row,
+.calc-bom .tn-table__body-row { width: 100%; }
 .calc-bom .tn-table__body-cell, .calc-bom .tn-table__header-cell { min-width: 0; }
+.calc-bom .tn-table__body-cell:first-child, .calc-bom .tn-table__header-cell:first-child { flex: 1 1 auto; }
 .calc-bom-count { align-self: flex-end; font-size: var(--font-size-body-small); line-height: var(--font-lineHeight-body-small); color: var(--content-secondary-enabled); padding: 0 24px; }
 
 /* сообщения */
