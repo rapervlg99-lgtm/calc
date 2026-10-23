@@ -91,6 +91,10 @@ func (s *Service) buildPDF(resp models.CalcResponse, contents map[string]int) ([
 		opt := gofpdf.ImageOptions{ImageType: "PNG", ReadDpi: true}
 		pdf.RegisterImageOptionsReader("tn-qr", opt, bytes.NewReader(reportQRPNG))
 	}
+	if len(reportLogoPlainPNG) > 0 {
+		opt := gofpdf.ImageOptions{ImageType: "PNG", ReadDpi: true}
+		pdf.RegisterImageOptionsReader("tn-logo-plain", opt, bytes.NewReader(reportLogoPlainPNG))
+	}
 
 	b := &pdfBuilder{pdf: pdf, svc: s, resp: resp, record: map[string]int{}}
 	b.elems = s.pdfElements(resp)
@@ -214,8 +218,9 @@ func (b *pdfBuilder) header() {
 	if pdf.PageNo() <= 1 {
 		return
 	}
-	if len(reportLogoPNG) > 0 {
-		b.drawImage("tn-logo", 25, 8, 42)
+	if len(reportLogoPlainPNG) > 0 {
+		// как в образце: логотип без плашки, слева, ширина ~43 мм
+		b.drawImage("tn-logo-plain", 18.3, 8, 45.6)
 	}
 	pdf.SetFont("tn", "", 7)
 	pdf.SetTextColor(70, 70, 70)
@@ -335,8 +340,9 @@ func (b *pdfBuilder) bullet(items ...string) {
 func (b *pdfBuilder) cover() {
 	pdf := b.pdf
 	pdf.AddPage()
-	if len(reportLogoPNG) > 0 {
-		b.drawImage("tn-logo", 128, 18, 52)
+	if len(reportLogoPlainPNG) > 0 {
+		// титул: тот же логотип крупнее, справа сверху (как в образце)
+		b.drawImage("tn-logo-plain", 121.5, 4.9, 72.3)
 	}
 	pdf.SetFillColor(pdfGray, pdfGray, pdfGray)
 	pdf.Rect(0, 85, 210, 100, "F")

@@ -16,6 +16,12 @@ var reportLogoPNG []byte
 //go:embed assets/report_qr.png
 var reportQRPNG []byte
 
+// reportLogoPlainPNG — логотип без плашки «Проектный сервис»: в образце
+// (report.pdf) и в колонтитуле, и на титуле стоит именно он.
+//
+//go:embed assets/report_logo_plain.png
+var reportLogoPlainPNG []byte
+
 //go:embed assets/DejaVuSans.ttf
 var dejaVuSans []byte
 
