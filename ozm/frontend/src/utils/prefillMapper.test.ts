@@ -256,3 +256,25 @@ describe('марки: значки профиля и разные формы з�
     expect(spec.some((a) => roll.includes(a))).toBe(true)
   })
 })
+
+describe('предзаполнение после распознавания', () => {
+  it('даёт только строки спецификации, без «Элемента 1» по умолчанию', () => {
+    const roll = [
+      { id: 'r79', label: '20Ш1', shape: 'I-beam_sm', standard: 'ГОСТ Р 57837-2017', massPerMeter: 30.6,
+        dims: { h: 100, b: 55, s: 4.1, t: 5.7, R: 7 } }
+    ] as any
+    const mapped = mapPrefillPayload(
+      {
+        items: [
+          { construction: 'Балки', profileMark: '20Ш1', gostProfile: 'ГОСТ Р 57837-2017', fireLimit: 'R60', mass: 1960 },
+          { construction: 'Колонны, стойки', profileMark: '20Ш1', gostProfile: 'ГОСТ Р 57837-2017', fireLimit: 'R90', mass: 3000 }
+        ],
+        groups: [{ title: '', rowIds: [1, 2] }]
+      } as any,
+      roll
+    )
+    expect(mapped.elements).toHaveLength(2)
+    expect(mapped.elements.map((e) => e.element.title)).toEqual(['балка 20Ш1', 'колонны, стойки 20Ш1'])
+    expect(mapped.groups.every((g) => g.title === '')).toBe(true)
+  })
+})

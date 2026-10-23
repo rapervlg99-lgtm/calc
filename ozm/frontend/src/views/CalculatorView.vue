@@ -108,14 +108,16 @@ const dragUid = ref<number | null>(null)
 const dragOverBlock = ref<number | null>(null)
 
 // ---------- prefill из OCR ----------
-function applyPendingPrefill() {
+function applyPendingPrefill(): boolean {
   const payload = prefillStore.consume()
-  if (!payload) return
+  if (!payload) return false
   const mapped = mapPrefillPayload(payload, store.dicts?.roll || [])
   if (!mapped.elements.length) {
     prefillNote.value = 'Предзаполнение пустое — элементы не изменены'
-    return
+    return false
   }
+  // Предзаполнение заменяет форму целиком: конструкция по умолчанию («Элемент 1»)
+  // не должна остаться в списке рядом с распознанными.
   form.ungrouped = []
   form.groups = []
   const toElement = (m: (typeof mapped.elements)[number]): FormElement => ({
@@ -145,6 +147,7 @@ function applyPendingPrefill() {
   prefillNote.value = (misses
     ? `Предзаполнено ${mapped.elements.length} эл. из распознанной спецификации${groupNote}: ${hits} с маркой из справочника, ${misses} — выберите профиль вручную. Заполните объект, отметьте согласие и нажмите «Рассчитать».`
     : `Предзаполнено ${mapped.elements.length} эл. из распознанной спецификации${groupNote}, марки найдены в справочнике. Заполните объект, отметьте согласие и нажмите «Рассчитать».`) + sheetNote
+  return true
 }
 
 // ---------- ссылка обмена расчётом ----------
@@ -202,14 +205,27 @@ function putTokenToUrl(token: string) {
   if (next !== window.location.href) window.history.replaceState(window.history.state, '', next)
 }
 
-async function initShare() {
+async function initShare(keepCurrent = false) {
   const token = shareTokenFromUrl(window.location.href)
   if (token) {
-    const payload = await shareStore.open(token)
-    if (payload && hydrate(payload)) {
-      lastJson = JSON.stringify(snapshot())
-      shareNote.value = ''
-      return
+    // keepCurrent — только что пришли данные из распознавания: сохранённый
+    // черновик вернул бы прежнее состояние (с «Элементом 1» по умолчанию),
+    // поэтому перезаписываем его текущей формой.
+    if (keepCurrent) {
+      shareStore.token = token
+      await shareStore.save(snapshot())
+      if (!shareStore.error) {
+        lastJson = JSON.stringify(snapshot())
+        shareNote.value = ''
+        return
+      }
+    } else {
+      const payload = await shareStore.open(token)
+      if (payload && hydrate(payload)) {
+        lastJson = JSON.stringify(snapshot())
+        shareNote.value = ''
+        return
+      }
     }
     // ссылка битая или устаревшая — начинаем с чистой и создаём новую
     window.history.replaceState(window.history.state, '', urlWithoutShareToken(window.location.href))
@@ -248,8 +264,8 @@ async function copyShareLink() {
 
 onMounted(async () => {
   await store.loadDicts()
-  applyPendingPrefill()
-  await initShare()
+  const prefilled = applyPendingPrefill()
+  await initShare(prefilled)
 })
 
 // ---------- справочники ----------
