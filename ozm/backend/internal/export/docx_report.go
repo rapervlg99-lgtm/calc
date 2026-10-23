@@ -1,13 +1,7 @@
 package export
 
 import (
-	"bytes"
 	"fmt"
-	"image"
-	"image/color"
-	"image/draw"
-	"image/png"
-	"math"
 	"strconv"
 	"strings"
 
@@ -174,7 +168,7 @@ func (d *docxReport) section1() {
 	d.caption("Таблица 1.")
 	d.para("Толщина сечения: в высоту h (h, H, A, d); в ширину b (b, B); стенки s (s, S, t, h); полки t (t, S1/S2); внутреннее закругление R; закругление полки r.")
 
-	widths := []float64{7, 30, 30, 16, 16, 14, 10, 10, 10, 10, 7, 7}
+	widths := []float64{7, 28, 28, 15, 22, 13, 9, 9, 9, 9, 7, 7}
 	rows := [][]docxCell{d.tableHead(widths, "№", "Марка элемента", "Тип защитного покрытия",
 		"Треб. предел огнест., мин", "Обогрев", "Длина, мм", "h", "b", "s", "t", "R", "r")}
 	lastGroup, idx := "", 0
@@ -214,19 +208,29 @@ func (d *docxReport) section1() {
 func (d *docxReport) section2() {
 	d.heading("2. Расчет приведенной толщины металла")
 	d.para("Приведенная толщина металла вычисляется по формуле:")
-	d.Para("center", docxRun{Text: "δпр = F / Π", Ital: true, Font: "Times New Roman", Size: 12})
+	deltaRun := append(formulaRuns("δ"), docxRun{Text: "пр = F / Π", Ital: true, Font: "Times New Roman", Size: 10})
+	d.Para("center", deltaRun...)
 	d.para("Где F — площадь поперечного сечения металлической конструкции; Π — периметр обогреваемой части конструкции. Оба параметра определяем согласно таблице 2.")
 
 	d.caption("Таблица 2.")
-	w2 := []float64{24, 38, 44, 64}
+	w2 := []float64{26, 36, 44, 64}
 	rows2 := [][]docxCell{d.tableHead(w2, "Схема", "Тип сечения конструкции", "площадь F", "периметр Π")}
 	rows2 = append(rows2, []docxCell{{Runs: []docxRun{{Text: "Формулы для расчета", Bold: true, Size: 8}}, Span: 4, Fill: "FAFAFA"}})
-	for _, t := range table2Formulas() {
+	for i, t := range table2Formulas() {
+		cell := docxCell{Align: "center"}
+		if img, err := sketchPNG(t[4]); err == nil {
+			cell.ImageName = "sketch-" + t[4] + ".png"
+			cell.ImageData = img
+			cell.ImageW, cell.ImageH = 19, 9.5
+		} else {
+			cell.Text = t[0]
+		}
+		_ = i
 		rows2 = append(rows2, []docxCell{
-			{Text: t[0], Align: "center"},
+			cell,
 			{Text: t[1]},
-			{Text: t[2]},
-			{Text: t[3]},
+			{Runs: formulaRuns(t[2])},
+			{Runs: formulaRuns(t[3])},
 		})
 	}
 	d.Table(w2, rows2)
@@ -357,7 +361,7 @@ func (d *docxReport) section4() {
 	if len(ozm) > 0 || (d.beton != nil && d.beton.AreaM2 > 0) {
 		d.sub("Тип защитного покрытия: плиты огнезащитные ТЕХНО ОЗМ и ТЕХНО ОЗБ")
 		d.para("Объём (м³) огнезащитных плит определяется по формуле:")
-		d.Para("center", docxRun{Text: "V = δ · S", Ital: true, Font: "Times New Roman", Size: 11})
+		d.Para("center", formulaRuns("V = δ · S")...)
 		d.para("где δ — толщина огнезащиты (определено в предыдущем разделе), S — площадь огнезащитных плит. Для металлоконструкций площадь огнезащитных плит S, а также площади нанесения клея и декоративного покрытия определяем согласно таблицы 6.")
 		d.caption("Таблица 6.")
 		w6 := []float64{40, 45, 40, 45}
@@ -369,7 +373,7 @@ func (d *docxReport) section4() {
 		}
 		d.Table(w6, rows6)
 		d.para("Здесь P — периметр принятых к защите сторон элемента:")
-		d.Para("center", docxRun{Text: "P = (□← + □→)h + (□↓ + □←)b", Ital: true, Font: "Times New Roman", Size: 11})
+		d.Para("center", formulaRuns("P = (□← + □→)h + (□↓ + □←)b")...)
 		d.para("Z — сумма углов, подверженных обогреву.")
 		d.para("Результаты расчета занесены в таблицу 7.")
 		d.caption("Таблица 7.")
@@ -412,9 +416,9 @@ func (d *docxReport) section4() {
 	if len(taikor) > 0 {
 		d.sub("Тип защитного покрытия: защитное покрытие TAIKOR")
 		d.para("Объём (кг) защитного покрытия TAIKOR определяется по формуле:")
-		d.Para("center", docxRun{Text: "M = q · S", Ital: true, Font: "Times New Roman", Size: 11})
+		d.Para("center", formulaRuns("M = q · S")...)
 		d.para("где q — расход защитного состава для металлических конструкций, S — площадь защищаемых металлических конструкций. Площадь S металлоконструкций определяется в зависимости от периметра принятых к защите сторон элемента Π, а также его длины L:")
-		d.Para("center", docxRun{Text: "S = (Π / 1000) · L", Ital: true, Font: "Times New Roman", Size: 11})
+		d.Para("center", formulaRuns("S = (Π / 1000) · L")...)
 		d.para("Результаты расчета занесены в таблицу 8.")
 		d.caption("Таблица 8.")
 		widths := []float64{7, 32, 12, 16, 16, 42, 18, 18}
@@ -559,100 +563,25 @@ func (d *docxReport) appendixPage(asset string) {
 
 // table2Formulas — строки таблицы 2: схема (подписью), тип сечения, F и Π
 // в линейной записи (в PDF те же формулы набраны засечным начертанием).
-func table2Formulas() [][4]string {
-	return [][4]string{
+func table2Formulas() [][5]string {
+	return [][5]string{
 		{"двутавр, уклон полок", "двутавр с уклоном полок",
 			"hs + 2t(b − s)",
-			"(←+→)(h − 4t + 2√(((b − s)/2)² + 4t²)) + (↓+←)b"},
+			"(←+→)(h − 4t + 2√(((b − s)/2)² + 4t²)) + (↓+←)b",
+			"ibeam_slope"},
 		{"двутавр, парал. полки", "двутавр простой",
 			"hs + 2t(b − s) + (4 − π)R²",
-			"(←+→)(h + b − s − (4 − π)R) + (↓+←)b"},
+			"(←+→)(h + b − s − (4 − π)R) + (↓+←)b",
+			"ibeam"},
 		{"труба кв.", "труба квадратная",
 			"4s(h − 1,43s)",
-			"(↓+←+↑+→)(h − 2R) + Σ·πR/2, R = 1,5s"},
+			"(↓+←+↑+→)(h − 2R) + Σ·πR/2, R = 1,5s",
+			"tube_sq"},
 		{"труба", "труба",
 			"4s(h − s)",
-			"(↓+←+↑+→)h"},
+			"(↓+←+↑+→)h",
+			"tube"},
 	}
-}
-
-// chartPNG рисует рисунок 1 (предел огнестойкости от приведённой толщины
-// металла) в PNG: в Word картинкой, как в образце.
-func (d *docxReport) chartPNG() ([]byte, error) {
-	const w, h = 800, 560
-	const left, right, top, bottom = 70, 30, 20, 60
-	img := image.NewRGBA(image.Rect(0, 0, w, h))
-	draw.Draw(img, img.Bounds(), &image.Uniform{color.White}, image.Point{}, draw.Src)
-	plotW, plotH := w-left-right, h-top-bottom
-	x0, y0 := left, top+plotH
-
-	set := func(x, y int, c color.Color) {
-		if x >= 0 && x < w && y >= 0 && y < h {
-			img.Set(x, y, c)
-		}
-	}
-	hline := func(y int, c color.Color) {
-		for x := x0; x <= x0+plotW; x++ {
-			set(x, y, c)
-		}
-	}
-	vline := func(x int, c color.Color) {
-		for y := top; y <= y0; y++ {
-			set(x, y, c)
-		}
-	}
-	gray := color.RGBA{120, 120, 120, 255}
-	light := color.RGBA{210, 210, 210, 255}
-	const maxX, maxY = 50.0, 250.0
-	for i := 0; i <= 5; i++ {
-		x := x0 + plotW*i/5
-		hline(top, light)
-		vline(x, light)
-	}
-	hline(top, gray)
-	hline(y0, gray)
-	vline(x0, gray)
-	vline(x0+plotW, gray)
-
-	// линии толщин: R = factRFor(толщина, δпр)
-	for ti, th := range []float64{30, 40, 50, 60, 70, 80, 90} {
-		g := 40 + ti*25
-		if g > 200 {
-			g = 200
-		}
-		col := color.RGBA{uint8(g), uint8(g), uint8(g), 255}
-		px, py, started := 0, 0, false
-		for step := 0.0; step <= maxX; step += 0.5 {
-			r := d.data.factRFor(th, step)
-			if r <= 0 {
-				started = false
-				continue
-			}
-			x := x0 + int(float64(plotW)*step/maxX)
-			y := y0 - int(float64(plotH)*math.Min(r, maxY)/maxY)
-			if started {
-				// линия Брезенхэма
-				dx, dy := x-px, y-py
-				steps := int(math.Abs(float64(dx)))
-				if int(math.Abs(float64(dy))) > steps {
-					steps = int(math.Abs(float64(dy)))
-				}
-				for s := 0; s <= steps; s++ {
-					t := 0.0
-					if steps > 0 {
-						t = float64(s) / float64(steps)
-					}
-					set(px+int(float64(dx)*t), py+int(float64(dy)*t), col)
-				}
-			}
-			px, py, started = x, y, true
-		}
-	}
-	var buf bytes.Buffer
-	if err := png.Encode(&buf, img); err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
 }
 
 // tableHead — строка заголовка таблицы.
@@ -662,4 +591,10 @@ func (d *docxReport) tableHead(widths []float64, titles ...string) []docxCell {
 		out = append(out, docxCell{Runs: []docxRun{{Text: t, Bold: true}}, Align: "center", Fill: "F3F3F3"})
 	}
 	return out
+}
+
+// formulaRuns — формула засечным курсивом, как в PDF (переменные курсивом,
+// числа и знаки — прямым).
+func formulaRuns(text string) []docxRun {
+	return []docxRun{{Text: text, Ital: true, Font: "Times New Roman", Size: 10}}
 }

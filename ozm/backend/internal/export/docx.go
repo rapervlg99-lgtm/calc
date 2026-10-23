@@ -36,14 +36,19 @@ type docxRun struct {
 // docxCell — ячейка таблицы. Текст можно задать либо одним полем Text, либо
 // готовыми фрагментами Runs (с оформлением).
 type docxCell struct {
-	Text  string
-	RowH  float64 // высота строки, мм (для полос титула)
-	Runs  []docxRun
-	Span  int    // объединение по горизонтали (1 — обычная)
-	Align string // left|center|right
-	Fill  string // фон RRGGBB
-	Bold  bool
-	Size  float64 // пункты для всей ячейки
+	Text string
+	RowH float64 // высота строки, мм (для полос титула)
+	// картинка в ячейке (схемы сечений таблицы 2)
+	ImageName string
+	ImageData []byte
+	ImageW    float64
+	ImageH    float64
+	Runs      []docxRun
+	Span      int    // объединение по горизонтали (1 — обычная)
+	Align     string // left|center|right
+	Fill      string // фон RRGGBB
+	Bold      bool
+	Size      float64 // пункты для всей ячейки
 }
 
 type docxMedia struct {
@@ -194,9 +199,25 @@ func (d *docxDoc) TablePlain(widths []float64, rows [][]docxCell) {
 }
 
 func (d *docxDoc) tableXML(widths []float64, rows [][]docxCell, borders bool) {
+	// Ширина полосы набора A4 при полях 25/15 мм — 170 мм. Внутри ячеек есть
+	// отступы (по ~0,55 мм с каждой стороны), поэтому колонки масштабируем так,
+	// чтобы таблица не выезжала за поле — как в PDF.
 	total := 0.0
 	for _, w := range widths {
 		total += w
+	}
+	if borders && total > 0 {
+		avail := 170.0 - 1.2*float64(len(widths))
+		if total > avail {
+			scale := avail / total
+			for i := range widths {
+				widths[i] *= scale
+			}
+			total = 0
+			for _, w := range widths {
+				total += w
+			}
+		}
 	}
 	var b strings.Builder
 	b.WriteString("<w:tbl><w:tblPr>")
@@ -222,7 +243,7 @@ func (d *docxDoc) tableXML(widths []float64, rows [][]docxCell, borders bool) {
 		b.WriteString(fmt.Sprintf(`<w:gridCol w:w="%d"/>`, int(w*twipsPerMM)))
 	}
 	b.WriteString("</w:tblGrid>")
-	for _, row := range rows {
+	for rowIdx, row := range rows {
 		rowH := 0.0
 		for _, c := range row {
 			if c.RowH > rowH {
@@ -230,6 +251,10 @@ func (d *docxDoc) tableXML(widths []float64, rows [][]docxCell, borders bool) {
 			}
 		}
 		b.WriteString("<w:tr>")
+		if rowIdx == 0 {
+			// шапка повторяется на каждой странице, как в PDF
+			b.WriteString(`<w:trPr><w:tblHeader/></w:trPr>`)
+		}
 		if rowH > 0 {
 			b.WriteString(fmt.Sprintf(`<w:trPr><w:trHeight w:val="%d" w:hRule="atLeast"/></w:trPr>`, int(rowH*twipsPerMM)))
 		}
@@ -266,7 +291,13 @@ func (d *docxDoc) tableXML(widths []float64, rows [][]docxCell, borders bool) {
 					runs[i].Size = c.Size
 				}
 			}
-			b.WriteString(paraXML(c.Align, 1, 1, runs, ""))
+			if len(c.ImageData) > 0 {
+				rid := d.registerImage(c.ImageName, c.ImageData)
+				b.WriteString(inlineImage(rid, c.ImageName,
+					int(c.ImageW*emuPerMM), int(c.ImageH*emuPerMM), c.Align))
+			} else {
+				b.WriteString(paraXML(c.Align, 1, 1, runs, ""))
+			}
 			b.WriteString("</w:tc>")
 		}
 		b.WriteString("</w:tr>")
