@@ -224,6 +224,21 @@ const GOST_RULES: [ProfileCategory, string][] = [
 const TUBE_DIMS_RE = /^(\d+(?:[.,]\d+)?)\s*[xх×*]\s*(\d+(?:[.,]\d+)?)\s*[xх×*]\s*(\d+(?:[.,]\d+)?)$/i
 
 export function profileCategory(group: string, gost: string, mark: string): ProfileCategory {
+  // ГОСТ сортамента задаёт вид профиля надёжнее названия группы: на KD.163
+  // группа «Уголки стальные горячекатаные равнополочные», а ГОСТ 19771-93 —
+  // это гнутые уголки, и поиск массы уходил в чужую форму сортамента
+  // (corner_e вместо corner_bent), марка «не находилась в ГОСТе».
+  const gostText = String(gost || '').toLowerCase()
+  if (gostText) {
+    for (const [cat, code] of GOST_RULES) {
+      if (!gostText.includes(code)) continue
+      // двутавры и тавры делят ГОСТы (26020, СТО АСЧМ), поэтому их вид
+      // по-прежнему решает название группы
+      if (cat === 'ygolok' || cat === 'ygolok_gnyt' || cat === 'shveller' || cat === 'shveller_gnyt') {
+        return cat
+      }
+    }
+  }
   const n = String(group || '').toLowerCase()
   const has = (...w: string[]) => w.every((x) => n.includes(x))
   const any = (...w: string[]) => w.some((x) => n.includes(x))
