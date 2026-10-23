@@ -54,5 +54,5 @@ func (s *Service) DOCX(resp models.CalcResponse) ([]byte, error) {
 	// Minimal OOXML Word package as ZIP-like flat XML alternative:
 	// produce a simple UTF-8 text document wrapped as docx-compatible minimal package is heavy;
 	// for parity scaffold we emit a UTF-8 "Word HTML" that Word opens, stored as .docx bytes via simple document.xml zip.
-	return buildMinimalDocx(resp)
+	return s.buildReportDocx(resp)
 }
