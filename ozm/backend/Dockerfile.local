@@ -1,0 +1,33 @@
+# syntax=docker/dockerfile:1.7
+# Локальный стенд: тот же бинарник, но рантайм — alpine с оболочкой и утилитами.
+# В поставке (набор corp) рантайм distroless (`Dockerfile`), а стенду по
+# infra/env.local/README.md нужен alpine: vision-путь распознавания рендерит
+# страницы PDF через poppler (pdftoppm), а distroless его не содержит.
+ARG DOCKER_PROXY_HOST_1=
+FROM ${DOCKER_PROXY_HOST_1}golang:1.26-alpine AS build
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+ENV CGO_ENABLED=0 GOOS=linux
+RUN go build -trimpath -ldflags='-s -w' -o /out/ozm-server  ./cmd/server \
+ && go build -trimpath -ldflags='-s -w' -o /out/ozm-migrate ./cmd/migrate \
+ && go build -trimpath -ldflags='-s -w' -o /out/ozm-dcextract ./cmd/dcextract
+
+FROM ${DOCKER_PROXY_HOST_1}alpine:3.21
+# poppler-utils — рендер страниц PDF в PNG для vision-распознавания (pdftoppm);
+# шрифты нужны, чтобы pdftoppm не терял текст на листах с текстовым слоем.
+RUN apk add --no-cache poppler-utils fontconfig ttf-dejavu ca-certificates tzdata \
+ && adduser -D -H -u 10001 ozm \
+ && mkdir -p /app /config /tmp/ozm-blobs \
+ && chown -R ozm:ozm /app /tmp/ozm-blobs
+
+WORKDIR /app
+COPY --from=build /out/ozm-server /app/ozm-server
+COPY --from=build /out/ozm-migrate /app/ozm-migrate
+COPY --from=build /src/dicts /config/dicts
+
+ENV TZ=Europe/Moscow
+EXPOSE 8080
+USER ozm
+ENTRYPOINT ["/app/ozm-server"]

@@ -1,8 +1,11 @@
 services:
+  # Образ API и миграций собирается здесь (один на два сервиса). Рантайм —
+  # alpine с poppler-utils: vision-путь рендерит страницы через pdftoppm, в
+  # поставке для этого отдельный distroless-образ (backend/Dockerfile).
   ozm-migrate:
     build:
       context: ./backend
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.local
     image: ozm-backend:local
     entrypoint: ["/app/ozm-migrate"]
     environment:
