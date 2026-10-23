@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildRollIndex,
+  markAliases,
   enrichPrefillWithGroups,
   mapBearingType,
   mapCoatingType,
@@ -220,5 +221,38 @@ describe('prefillMapper', () => {
     expect(matchRoll('140х100х6', roll, idx)?.id).toBe('13278')
     // квадратная запись «140х5» не должна цепляться к «140/90 x 8»
     expect(matchRoll('140х5', roll, idx)).toBeNull()
+  })
+})
+
+describe('марки: значки профиля и разные формы записи', () => {
+  it('уголок «L100×7» в справочнике совпадает с «100х7» из спецификации', () => {
+    const spec = markAliases('100х7')
+    const roll = markAliases('L100×7')
+    expect(spec.some((a) => roll.includes(a))).toBe(true)
+  })
+
+  it('неравнополочный уголок: «100х63х8» == «L100×63×8»', () => {
+    const spec = markAliases('100х63х8')
+    const roll = markAliases('L100×63×8')
+    expect(spec.some((a) => roll.includes(a))).toBe(true)
+  })
+
+  it('гнутый швеллер: «Гн[180х50х4» == «ГН. 180-50-4»', () => {
+    const spec = markAliases('Гн[180х50х4')
+    const roll = markAliases('ГН. 180-50-4')
+    expect(spec).toContain('180X50X4')
+    expect(roll).toContain('180X50X4')
+  })
+
+  it('равнополочный гнутый уголок «60х4» находит «60×60×4»', () => {
+    const spec = markAliases('Гн∟60х4')
+    const roll = markAliases('L60×60×4')
+    expect(spec.some((a) => roll.includes(a))).toBe(true)
+  })
+
+  it('квадратная труба «100х4» находит «□100×100×4»', () => {
+    const spec = markAliases('Гн100х4')
+    const roll = markAliases('□100×100×4')
+    expect(spec.some((a) => roll.includes(a))).toBe(true)
   })
 })

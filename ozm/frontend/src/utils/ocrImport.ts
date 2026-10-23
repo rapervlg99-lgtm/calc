@@ -298,7 +298,8 @@ export const SHAPES_BY_CATEGORY: Record<string, string[]> = {
   shveller: ['channel_', 'channel_sl'],
   shveller_gnyt: ['channel_', 'channel_sl', 'channel_bent', 'channel_unequal'],
   ygolok: ['corner_', 'corner_e', 'corner_ue'],
-  ygolok_gnyt: ['corner_', 'corner_e', 'corner_ue'],
+  // гнутые уголки в сортаменте лежат отдельной формой corner_bent
+  ygolok_gnyt: ['corner_', 'corner_e', 'corner_ue', 'corner_bent'],
   tryba_es_kvadr: ['tube_sq'],
   tryba_es_pr: ['profile_', 'profile_sm'],
   tryba_es_krug: ['tube_', 'tube_sm'],

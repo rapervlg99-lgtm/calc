@@ -7,6 +7,7 @@ import {
   cleanMark,
   constructionName,
   defaultShapeFor,
+  SHAPES_BY_CATEGORY,
   rollMarkCandidates,
   handbookKey,
   handbookMarkFor,
@@ -470,5 +471,15 @@ describe('trailing profile glyph in marks from the text layer', () => {
     expect(cleanMark('Гн 100х5 □')).toBe('100х5')
     expect(cleanMark('Ромб 12')).toBe('Ромб 12')
     expect(cleanMark('Н75-750-0,8')).toBe('Н75-750-0,8')
+  })
+})
+
+describe('формы сортамента по категориям', () => {
+  it('гнутые уголки ищутся и среди corner_bent', () => {
+    expect(SHAPES_BY_CATEGORY.ygolok_gnyt).toContain('corner_bent')
+    expect(SHAPES_BY_CATEGORY.ygolok_gnyt).toContain('corner_e')
+  })
+  it('гнутые швеллеры ищутся среди channel_bent', () => {
+    expect(SHAPES_BY_CATEGORY.shveller_gnyt).toContain('channel_bent')
   })
 })

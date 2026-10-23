@@ -79,8 +79,14 @@ export function normalizeMark(mark: string): string {
   let s = String(mark || '').trim().toUpperCase()
   // drop common prefixes from OCR / raw text
   s = s.replace(/^(ДВУТАВР|ДВУТАВР\.|I|ШВЕЛЛЕР|ШВ\.?|УГОЛОК|УГ\.?|ТРУБА|ТР\.?|ТР\s+|PIPE)\s*/i, '')
+  // значки сечения в начале обозначения: «L100×7» у уголка, «□100×100×4» у
+  // трубы, «ГН. 25-26-2» у гнутого швеллера (справочник проката префикс хранит,
+  // спецификация — нет; без снятия марка не находилась)
+  s = s.replace(/^(?:ГН\.?|ГНУТЫЙ|L|□|∟|⌶|\[)\s*/i, '')
   s = s
     .replace(/,/g, '.')
+    // «25-26-2» (гнутые профили в справочнике) — те же размеры, что «25×26×2»
+    .replace(/(?<=\d)-(?=\d)/g, 'X')
     .replace(/[×ХX]/gi, 'X')
     .replace(/[БB]/gi, 'B') // beam series letter
     .replace(/[КK]/gi, 'K')
@@ -107,7 +113,12 @@ export function markAliases(mark: string): string[] {
   }
   // «140х90х8» в спецификации — это «140/90 x 8» в справочнике неравнополочных
   // уголков и гнутых профилей; «63х63х5» — «63 x 5» равнополочного.
-  const trip = raw.match(/^(\d+(?:[.,]\d+)?)[XХ×*](\d+(?:[.,]\d+)?)[XХ×*](\d+(?:[.,]\d+)?)$/i)
+  // «60×4» у равнополочного уголка = «60×60×4» в справочнике. Разбираем уже
+  // нормализованную марку: значки профиля («Гн∟», «□», «L») к этому месту сняты.
+  const shape = base.replace(/[.,]/g, '.')
+  const pair = shape.match(/^(\d+(?:\.\d+)?)X(\d+(?:\.\d+)?)$/)
+  if (pair) set.add(normalizeMark(`${pair[1]}X${pair[1]}X${pair[2]}`))
+  const trip = shape.match(/^(\d+(?:\.\d+)?)X(\d+(?:\.\d+)?)X(\d+(?:\.\d+)?)$/)
   if (trip) {
     set.add(normalizeMark(trip[1] === trip[2] ? `${trip[1]}X${trip[3]}` : `${trip[1]}/${trip[2]}X${trip[3]}`))
   }
