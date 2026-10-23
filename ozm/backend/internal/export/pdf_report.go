@@ -75,6 +75,9 @@ func (s *Service) buildPDF(resp models.CalcResponse, contents map[string]int) ([
 	pdf.SetAutoPageBreak(true, 22)
 	pdf.AddUTF8FontFromBytes("tn", "", dejaVuSans)
 	pdf.AddUTF8FontFromBytes("tn", "B", dejaVuSansBold)
+	// засечный шрифт для формул: переменные курсивом, числа прямым
+	pdf.AddUTF8FontFromBytes("tns", "", dejaVuSerif)
+	pdf.AddUTF8FontFromBytes("tns", "I", dejaVuSerifItalic)
 	pdf.AliasNbPages("{nb}")
 	pdf.SetTitle("Расчет огнезащиты — "+resp.Inputs.ObjectName, false)
 	pdf.SetCreator("ОЗМ — калькулятор огнезащиты ТЕХНОНИКОЛЬ", false)
@@ -274,18 +277,37 @@ func (b *pdfBuilder) para(text string) {
 	b.pdf.Ln(1.5)
 }
 
+// caption — подпись таблицы; если внизу страницы мало места, подпись уходит на
+// новую страницу вместе с таблицей.
 func (b *pdfBuilder) caption(text string) {
+	if _, pageH := b.pdf.GetPageSize(); b.pdf.GetY()+22 > pageH-22 {
+		b.pdf.AddPage()
+	}
 	b.pdf.SetFont("tn", "", 9)
 	b.pdf.CellFormat(170, 6, text, "", 1, "R", false, 0, "")
 	b.pdf.SetFont("tn", "", 9.5)
 }
 
-func (b *pdfBuilder) formula(text string) {
+// captionTable — подпись и таблица как одно целое (подпись не отрывается).
+func (b *pdfBuilder) captionTable(text string, cols []pdfCol, rows []pdfRow) {
+	b.caption(text)
+	b.table(cols, rows)
+}
+
+// displayFormula — формула по центру строки (набор засечным шрифтом).
+func (b *pdfBuilder) displayFormula(size float64, build func(*formula)) {
 	pdf := b.pdf
-	pdf.SetFont("tn", "", 11)
-	pdf.CellFormat(170, 8, text, "", 1, "C", false, 0, "")
+	w := formulaWidth(pdf, size, build)
+	// над базовой линией нужен запас под числитель дроби, под ней — под знаменатель
+	above, below := size*1.15, size*0.85
+	if _, pageH := pdf.GetPageSize(); pdf.GetY()+above+below+4 > pageH-22 {
+		pdf.AddPage()
+	}
+	y := pdf.GetY() + above
+	drawFormula(pdf, 25+(170-w)/2, y, size, build)
 	pdf.SetFont("tn", "", 9.5)
-	pdf.Ln(2)
+	pdf.SetTextColor(33, 33, 33)
+	pdf.SetY(y + below)
 }
 
 func (b *pdfBuilder) bullet(items ...string) {

@@ -22,6 +22,15 @@ var dejaVuSans []byte
 //go:embed assets/DejaVuSans-Bold.ttf
 var dejaVuSansBold []byte
 
+// Формулы набираются засечным шрифтом: переменные курсивом, числа прямым —
+// как в легаси-документе.
+//
+//go:embed assets/DejaVuSerif.ttf
+var dejaVuSerif []byte
+
+//go:embed assets/DejaVuSerif-Italic.ttf
+var dejaVuSerifItalic []byte
+
 // appendixFS — сканы приложений (узлы устройства огнезащиты и технические
 // листы). Лежат отдельными файлами: подпись в отчёте формируется по манифесту
 // в pdf_appendix.go.
