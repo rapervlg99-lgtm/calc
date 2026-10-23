@@ -3,6 +3,7 @@ package export
 import (
 	"bytes"
 	"math"
+	"strconv"
 	"strings"
 
 	"github.com/jung-kurt/gofpdf"
@@ -72,12 +73,48 @@ func (b *pdfBuilder) appendixSheets() []appendixPage {
 	return out
 }
 
-// appendixCerts — сертификаты пожарной безопасности (Приложение Б).
+// appendixCerts — сертификаты соответствия (Приложение Б): на плиты — ЕАЭС по
+// ТР ЕАЭС 043/2017 и добровольный сертификат на минераловатные плиты, на
+// покрытия TAIKOR — сертификаты по типу состава. Дубликаты не повторяются.
 func (b *pdfBuilder) appendixCerts() []appendixPage {
-	if !b.hasCoat(1) {
-		return nil
+	var out []appendixPage
+	seen := map[string]bool{}
+	add := func(name string) {
+		if seen[name] {
+			return
+		}
+		seen[name] = true
+		out = append(out, appendixPage{name})
 	}
-	return []appendixPage{{"b-cert-1.jpg"}, {"b-cert-2.jpg"}, {"b-cert-3.jpg"}}
+	plates := b.hasCoat(1) || b.hasBeton()
+	if plates {
+		for _, n := range []string{"b-ozm-1.jpg", "b-ozm-2.jpg", "b-ozm-3.jpg"} {
+			add(n)
+		}
+	}
+	if b.hasCoat(1) || b.hasBeton() {
+		for i := 1; i <= 6; i++ {
+			add("b-kv-" + strconv.Itoa(i) + ".jpg")
+		}
+	}
+	switch coat := b.taikorCoat(); coat {
+	case "2":
+		for i := 1; i <= 4; i++ {
+			add("b-t2-" + strconv.Itoa(i) + ".jpg")
+		}
+	case "3":
+		for i := 1; i <= 3; i++ {
+			add("b-t3-" + strconv.Itoa(i) + ".jpg")
+		}
+	case "4":
+		for i := 1; i <= 3; i++ {
+			add("b-t3-" + strconv.Itoa(i) + ".jpg")
+		}
+		for i := 1; i <= 2; i++ {
+			add("b-t4-" + strconv.Itoa(i) + ".jpg")
+		}
+	}
+	return out
 }
 
 // hasCoat — есть ли в расчёте покрытие с таким кодом (1 — ОЗМ).
