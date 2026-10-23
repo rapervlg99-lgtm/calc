@@ -31,6 +31,20 @@
 .calc-hint { font-size: var(--font-size-body-small); line-height: var(--font-lineHeight-body-small); color: var(--content-secondary-enabled); }
 .calc-divider { height: 1px; background: var(--border-secondary-enabled); }
 .calc-ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Длинные подписи (название конструкции, покрытие) переносятся на вторую строку:
+   текст виден целиком, а всё, что не влезло в две строки, обрезается
+   многоточием. Полный текст остаётся в подсказке (title). */
+.calc-clamp2 {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
 .calc-num { text-align: right; font-variant-numeric: tabular-nums; }
 
 .calc-grid-object { display: grid; grid-template-columns: 1.6fr 1.6fr 1fr; gap: 12px; }
