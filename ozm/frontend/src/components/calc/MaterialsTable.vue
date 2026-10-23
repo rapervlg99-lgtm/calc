@@ -26,7 +26,7 @@ function digits(m: MaterialLine): number {
     <div class="tn-table__body-container">
       <div v-if="!rows.length" class="tn-table__empty-container calc-hint">Материалы появятся после расчёта</div>
       <div v-for="m in rows" :key="m.id" class="tn-table__body-row">
-        <div class="tn-table__body-cell" style="flex: 1 0 0"><span class="tn-table__body-text">{{ m.title }}</span></div>
+        <div class="tn-table__body-cell" style="flex: 1 0 0"><span class="tn-table__body-text calc-clamp2" :title="m.title">{{ m.title }}</span></div>
         <div class="tn-table__body-cell" style="flex: 0 0 120px"><span class="tn-table__body-text">{{ m.unit }}</span></div>
         <div class="tn-table__body-cell calc-num" style="flex: 0 0 160px"><span class="tn-table__body-text" style="font-variant-numeric: tabular-nums">{{ fmt(m.quantity, digits(m)) }}</span></div>
       </div>

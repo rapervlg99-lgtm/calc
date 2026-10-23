@@ -132,9 +132,12 @@
 .calc-sides-label { font-size: var(--font-size-label-medium); line-height: var(--font-lineHeight-label-medium); font-weight: var(--font-weight-accent); color: var(--content-secondary-enabled); }
 
 /* результаты */
-.calc-results-scroll { overflow-x: auto; }
-.calc-results { display: flex; flex-direction: column; min-width: 960px; }
-.calc-res-grid { display: grid; grid-template-columns: 28px minmax(0, 1.5fr) minmax(0, 1.1fr) 56px minmax(0, 1.4fr) 92px 82px 76px 104px 128px; gap: 12px; align-items: center; }
+/* Таблица результатов всегда по ширине контейнера: фиксированной минимальной
+   ширины нет, горизонтальной прокрутки нет — вместо неё подписи переносятся на
+   вторую строку (.calc-clamp2). */
+.calc-results-scroll { min-width: 0; }
+.calc-results { display: flex; flex-direction: column; min-width: 0; }
+.calc-res-grid { display: grid; grid-template-columns: 28px minmax(0, 2.6fr) minmax(0, 1.4fr) minmax(38px, 0.5fr) minmax(0, 2.4fr) minmax(56px, 0.8fr) minmax(46px, 0.62fr) minmax(42px, 0.58fr) minmax(52px, 0.72fr) minmax(70px, 0.95fr); gap: 10px; align-items: center; }
 .calc-res-head { padding: 0 8px 10px; border-bottom: 1px solid var(--border-secondary-enabled); font-size: var(--font-size-body-small); line-height: var(--font-lineHeight-body-small); font-weight: var(--font-weight-accent); color: var(--content-secondary-enabled); }
 .calc-res-item { border-bottom: 1px solid var(--border-secondary-enabled); }
 .calc-res-row { padding: 14px 8px; cursor: pointer; font-size: var(--font-size-body-medium); line-height: var(--font-lineHeight-body-medium); transition: background var(--duration-instant) linear; background: transparent; }

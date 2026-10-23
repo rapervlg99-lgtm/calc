@@ -40,13 +40,13 @@ function deltaColor(r: ElementResult): string {
         <div class="calc-res-grid calc-res-row" :class="{ 'calc-res-row_open': open === r.id }" @click="toggle(r.id)">
           <div class="calc-res-chevron" :class="{ 'calc-res-chevron_open': open === r.id }"><TnIcon name="down-s" :size="20" /></div>
           <div class="calc-clamp2" style="font-weight: var(--font-weight-accent)" :title="r.title">{{ r.title }}</div>
-          <div class="calc-ellipsis" style="color: var(--content-secondary-enabled)">{{ shapeLabel(r.shape) }}</div>
+          <div class="calc-clamp2" style="color: var(--content-secondary-enabled)" :title="shapeLabel(r.shape)">{{ shapeLabel(r.shape) }}</div>
           <!-- Предел огнестойкости есть не у всякой конструкции: у АКЗ его нет,
                у огнезащитного покрытия он может быть не задан — тогда прочерк,
                а не «R0». -->
           <div>{{ r.htLevel ? 'R' + r.htLevel : '—' }}</div>
           <div class="calc-clamp2" style="color: var(--content-secondary-enabled)" :title="coatLabel(r.coat)">{{ coatLabel(r.coat) }}</div>
-          <div style="color: var(--content-secondary-enabled)">{{ liningLabel(r.lining) }}</div>
+          <div class="calc-clamp2" style="color: var(--content-secondary-enabled)" :title="liningLabel(r.lining)">{{ liningLabel(r.lining) }}</div>
           <div class="calc-num">{{ fmt(r.dpr, 2) }}</div>
           <div class="calc-num" style="font-weight: var(--font-weight-accent)" :style="{ color: deltaColor(r) }">{{ resultDelta(r) }}</div>
           <div class="calc-num">{{ fmt(r.areaM2, 1) }}</div>
