@@ -198,14 +198,24 @@ func (s *Service) familyLabel(shape string) string {
 
 // ---------- рамка документа ----------
 
+// drawImage ставит картинку по ширине, высоту считает по пиксельным пропорциям
+// самой картинки — так логотип не растягивается и не сжимается.
+func (b *pdfBuilder) drawImage(name string, x, y, width float64) {
+	info := b.pdf.GetImageInfo(name)
+	if info == nil || info.Width() <= 0 {
+		return
+	}
+	h := width * info.Height() / info.Width()
+	b.pdf.ImageOptions(name, x, y, width, h, false, gofpdf.ImageOptions{ImageType: "PNG"}, 0, "")
+}
+
 func (b *pdfBuilder) header() {
 	pdf := b.pdf
 	if pdf.PageNo() <= 1 {
 		return
 	}
 	if len(reportLogoPNG) > 0 {
-		opt := gofpdf.ImageOptions{ImageType: "PNG", ReadDpi: true}
-		pdf.ImageOptions("tn-logo", 25, 8, 38, 0, false, opt, 0, "")
+		b.drawImage("tn-logo", 25, 8, 42)
 	}
 	pdf.SetFont("tn", "", 7)
 	pdf.SetTextColor(70, 70, 70)
@@ -214,8 +224,7 @@ func (b *pdfBuilder) header() {
 		pdf.CellFormat(70, 3.4, line, "", 0, "R", false, 0, "")
 	}
 	if len(reportQRPNG) > 0 {
-		opt := gofpdf.ImageOptions{ImageType: "PNG", ReadDpi: true}
-		pdf.ImageOptions("tn-qr", 172, 7.5, 14, 0, false, opt, 0, "")
+		b.drawImage("tn-qr", 172, 8, 14)
 	}
 	pdf.SetTextColor(33, 33, 33)
 	pdf.SetY(24)
@@ -326,8 +335,7 @@ func (b *pdfBuilder) cover() {
 	pdf := b.pdf
 	pdf.AddPage()
 	if len(reportLogoPNG) > 0 {
-		opt := gofpdf.ImageOptions{ImageType: "PNG", ReadDpi: true}
-		pdf.ImageOptions("tn-logo", 128, 18, 52, 0, false, opt, 0, "")
+		b.drawImage("tn-logo", 128, 18, 52)
 	}
 	pdf.SetFillColor(pdfGray, pdfGray, pdfGray)
 	pdf.Rect(0, 85, 210, 100, "F")
