@@ -208,12 +208,11 @@ func (d *docxReport) section1() {
 func (d *docxReport) section2() {
 	d.heading("2. Расчет приведенной толщины металла")
 	d.para("Приведенная толщина металла вычисляется по формуле:")
-	deltaRun := append(formulaRuns("δ"), docxRun{Text: "пр = F / Π", Ital: true, Font: "Times New Roman", Size: 10})
-	d.Para("center", deltaRun...)
+	d.Math(formulaDeltaPr())
 	d.para("Где F — площадь поперечного сечения металлической конструкции; Π — периметр обогреваемой части конструкции. Оба параметра определяем согласно таблице 2.")
 
 	d.caption("Таблица 2.")
-	w2 := []float64{26, 36, 44, 64}
+	w2 := []float64{22, 30, 50, 68}
 	rows2 := [][]docxCell{d.tableHead(w2, "Схема", "Тип сечения конструкции", "площадь F", "периметр Π")}
 	rows2 = append(rows2, []docxCell{{Runs: []docxRun{{Text: "Формулы для расчета", Bold: true, Size: 8}}, Span: 4, Fill: "FAFAFA"}})
 	for i, t := range table2Formulas() {
@@ -226,15 +225,19 @@ func (d *docxReport) section2() {
 			cell.Text = t[0]
 		}
 		_ = i
+		ommlSize = 12 // 6 pt в таблице: формулы длинные, как в PDF
+		fLines, pLines := table2Omml(i)
+		ommlSize = 20
 		rows2 = append(rows2, []docxCell{
 			cell,
 			{Text: t[1]},
-			{Runs: formulaRuns(t[2])},
-			{Runs: formulaRuns(t[3])},
+			{MathLines: fLines},
+			{MathLines: pLines},
 		})
 	}
 	d.Table(w2, rows2)
-	d.para("Здесь и далее формулы расчета используют символы □↓, □←, □↑, □→, которые равны 0, если обогрева с данной стороны нет, и 1, если обогрев с данной стороны есть; логическую операцию ИЛИ; сумму подверженных обогреву сторон по углам Σ = ИЛИ(□↓,□←) + ИЛИ(□←,□↑) + ИЛИ(□↑,□→) + ИЛИ(□→,□↓).")
+	d.para("Здесь и далее формулы расчета используют символы □↓, □←, □↑, □→, которые равны 0, если обогрева с данной стороны нет, и 1, если обогрев с данной стороны есть; логическую операцию ИЛИ; сумму подверженных обогреву сторон по углам:")
+	d.Math(ommlSigma())
 	d.para("Результаты расчета приведены в таблице 3.")
 	d.caption("Таблица 3.")
 	widths := []float64{6, 30, 28, 34, 22, 20, 30}
@@ -361,7 +364,7 @@ func (d *docxReport) section4() {
 	if len(ozm) > 0 || (d.beton != nil && d.beton.AreaM2 > 0) {
 		d.sub("Тип защитного покрытия: плиты огнезащитные ТЕХНО ОЗМ и ТЕХНО ОЗБ")
 		d.para("Объём (м³) огнезащитных плит определяется по формуле:")
-		d.Para("center", formulaRuns("V = δ · S")...)
+		d.Math(ommlV())
 		d.para("где δ — толщина огнезащиты (определено в предыдущем разделе), S — площадь огнезащитных плит. Для металлоконструкций площадь огнезащитных плит S, а также площади нанесения клея и декоративного покрытия определяем согласно таблицы 6.")
 		d.caption("Таблица 6.")
 		w6 := []float64{40, 45, 40, 45}
@@ -373,7 +376,7 @@ func (d *docxReport) section4() {
 		}
 		d.Table(w6, rows6)
 		d.para("Здесь P — периметр принятых к защите сторон элемента:")
-		d.Para("center", formulaRuns("P = (□← + □→)h + (□↓ + □←)b")...)
+		d.Math(ommlP())
 		d.para("Z — сумма углов, подверженных обогреву.")
 		d.para("Результаты расчета занесены в таблицу 7.")
 		d.caption("Таблица 7.")
@@ -416,9 +419,9 @@ func (d *docxReport) section4() {
 	if len(taikor) > 0 {
 		d.sub("Тип защитного покрытия: защитное покрытие TAIKOR")
 		d.para("Объём (кг) защитного покрытия TAIKOR определяется по формуле:")
-		d.Para("center", formulaRuns("M = q · S")...)
+		d.Math(ommlM())
 		d.para("где q — расход защитного состава для металлических конструкций, S — площадь защищаемых металлических конструкций. Площадь S металлоконструкций определяется в зависимости от периметра принятых к защите сторон элемента Π, а также его длины L:")
-		d.Para("center", formulaRuns("S = (Π / 1000) · L")...)
+		d.Math(ommlS())
 		d.para("Результаты расчета занесены в таблицу 8.")
 		d.caption("Таблица 8.")
 		widths := []float64{7, 32, 12, 16, 16, 42, 18, 18}
@@ -591,10 +594,4 @@ func (d *docxReport) tableHead(widths []float64, titles ...string) []docxCell {
 		out = append(out, docxCell{Runs: []docxRun{{Text: t, Bold: true}}, Align: "center", Fill: "F3F3F3"})
 	}
 	return out
-}
-
-// formulaRuns — формула засечным курсивом, как в PDF (переменные курсивом,
-// числа и знаки — прямым).
-func formulaRuns(text string) []docxRun {
-	return []docxRun{{Text: text, Ital: true, Font: "Times New Roman", Size: 10}}
 }

@@ -38,6 +38,8 @@ type docxRun struct {
 type docxCell struct {
 	Text string
 	RowH float64 // высота строки, мм (для полос титула)
+	// наборные формулы в ячейке (таблица 2): каждая — отдельной строкой
+	MathLines []string
 	// картинка в ячейке (схемы сечений таблицы 2)
 	ImageName string
 	ImageData []byte
@@ -291,7 +293,11 @@ func (d *docxDoc) tableXML(widths []float64, rows [][]docxCell, borders bool) {
 					runs[i].Size = c.Size
 				}
 			}
-			if len(c.ImageData) > 0 {
+			if len(c.MathLines) > 0 {
+				for _, ml := range c.MathLines {
+					b.WriteString(`<w:p><w:pPr><w:jc w:val="center"/></w:pPr><m:oMath>` + ml + `</m:oMath></w:p>`)
+				}
+			} else if len(c.ImageData) > 0 {
 				rid := d.registerImage(c.ImageName, c.ImageData)
 				b.WriteString(inlineImage(rid, c.ImageName,
 					int(c.ImageW*emuPerMM), int(c.ImageH*emuPerMM), c.Align))
@@ -510,6 +516,7 @@ func (d *docxDoc) sectPr() string {
 }
 
 const docNamespaces = `xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" ` +
+	`xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math" ` +
 	`xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" ` +
 	`xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" ` +
 	`xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" ` +
