@@ -241,15 +241,16 @@ func (b *pdfBuilder) footer() {
 	pdf.SetDrawColor(pdfRed, pdfGreen, pdfBlue)
 	pdf.SetLineWidth(0.5)
 	pdf.Line(25, y, w-15, y)
+	// номер страницы — красный квадрат 5 мм с цифрой 7 кегля
 	pdf.SetFillColor(pdfRed, pdfGreen, pdfBlue)
-	pdf.Rect(w-15, y+1.5, 6, 6, "F")
-	pdf.SetFont("tn", "", 8)
+	pdf.Rect(w-15, y+1.2, 5.0, 5.0, "F")
+	pdf.SetFont("tn", "", 7)
 	pdf.SetTextColor(255, 255, 255)
-	pdf.SetXY(w-15, y+1.6)
-	pdf.CellFormat(6, 5.8, fmt.Sprintf("%d", pdf.PageNo()), "", 0, "C", false, 0, "")
-	pdf.SetTextColor(120, 120, 120)
-	pdf.SetXY(w-9, y+1.6)
-	pdf.CellFormat(9, 5.8, "/{nb}", "", 0, "R", false, 0, "")
+	pdf.SetXY(w-15, y+1.35)
+	pdf.CellFormat(5.0, 4.7, fmt.Sprintf("%d", pdf.PageNo()), "", 0, "C", false, 0, "")
+	pdf.SetTextColor(130, 130, 130)
+	pdf.SetXY(w-9.7, y+1.35)
+	pdf.CellFormat(4.4, 4.7, "/{nb}", "", 0, "L", false, 0, "")
 	pdf.SetTextColor(33, 33, 33)
 }
 
