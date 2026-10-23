@@ -173,6 +173,12 @@ func (e *Engine) calcElement(groupID, elID string, el models.ElementInput, group
 	dpr := deltaPr(f, pi)
 	trace = append(trace, fmt.Sprintf("%s: F=%.0f Π=%.0f δпр=%.1f", elID, f, pi, dpr))
 
+	// Полный периметр: АКЗ и финишное покрытие наносят по всей поверхности, а
+	// огнезащиту считают по нагреваемым сторонам — в спецификации это две
+	// разные площади.
+	piFull := heatedPerimeter(el.Shape, dims, models.HeatedSides{Left: true, Top: true, Right: true, Bottom: true})
+	fullArea := piFull / 1000 * el.LengthM
+
 	er := models.ElementResult{
 		ID:      groupID + "/" + elID, // keep stable path
 		GroupID: groupID,
@@ -195,9 +201,10 @@ func (e *Engine) calcElement(groupID, elID string, el models.ElementInput, group
 		// АКЗ — только антикоррозионная защита: конструкции с ней входят в расчёт
 		// (в ведомости видно, сколько красить), но огнезащитный материал для них
 		// не считается, и это не ошибка и не исключение. Состав АКЗ вводится
-		// вручную, предел огнестойкости для неё не нужен.
-		s := pi / 1000 * el.LengthM
-		er.AreaM2 = round3(s * qtyMul)
+		// вручную, предел огнестойкости для неё не нужен. Площадь — вся
+		// поверхность конструкции (полный периметр), её и красят.
+		er.AreaM2 = round3(fullArea * qtyMul)
+		er.AkzAreaM2 = er.AreaM2
 		trace = append(trace, fmt.Sprintf("%s: АКЗ — огнезащитный материал не считается, площадь окраски %.2f м²", elID, er.AreaM2))
 		return er, lines, trace
 	}
@@ -248,6 +255,7 @@ func (e *Engine) calcElement(groupID, elID string, el models.ElementInput, group
 	er.Delta = delta
 	s := pi / 1000 * el.LengthM
 	er.AreaM2 = round3(s * qtyMul)
+	er.AkzAreaM2 = round3(fullArea * qtyMul)
 	tq := e.cfg.Config.TaikorQ
 	if tq == 0 {
 		tq = 1.43
@@ -263,13 +271,14 @@ func (e *Engine) calcElement(groupID, elID string, el models.ElementInput, group
 		heatMass := round3(s * heat.Rate * tq * qtyMul)
 		lines = append(lines, e.materialLine("Taikor_Extra", "TAIKOR FP Extra", groupID, elID, heatMass))
 	}
+	// Грунт и финиш — по площади окраски (вся поверхность), не по нагреваемой.
 	if el.Primer {
-		lines = append(lines, e.materialLine("T150p", "", groupID, elID, round3(s*rateOf(e.material("T150p"))*qtyMul)))
+		lines = append(lines, e.materialLine("T150p", "", groupID, elID, round3(fullArea*rateOf(e.material("T150p"))*qtyMul)))
 	}
 	if el.Enamel {
-		lines = append(lines, e.materialLine("T425t", "", groupID, elID, round3(s*rateOf(e.material("T425t"))*qtyMul)))
+		lines = append(lines, e.materialLine("T425t", "", groupID, elID, round3(fullArea*rateOf(e.material("T425t"))*qtyMul)))
 	}
-	trace = append(trace, fmt.Sprintf("%s: TAIKOR δ=%.2f rate=%.3f mass=%.3f", elID, delta, rate, er.Volume))
+	trace = append(trace, fmt.Sprintf("%s: TAIKOR δ=%.2f rate=%.3f mass=%.3f, S акз=%.2f", elID, delta, rate, er.Volume, er.AkzAreaM2))
 	return er, lines, trace
 }
 

@@ -172,16 +172,21 @@ type MaterialLine struct {
 }
 
 type ElementResult struct {
-	ID        string  `json:"id"`
-	GroupID   string  `json:"groupId"`
-	Title     string  `json:"title"`
-	Shape     string  `json:"shape"`
-	F         float64 `json:"f"`      // mm²
-	Pi        float64 `json:"pi"`     // mm
-	Dpr       float64 `json:"dpr"`    // mm
-	Delta     float64 `json:"delta"`  // mm coating thickness
-	Lining    int     `json:"lining"` // 1 box 2 contour 3 round
-	AreaM2    float64 `json:"areaM2"`
+	ID      string  `json:"id"`
+	GroupID string  `json:"groupId"`
+	Title   string  `json:"title"`
+	Shape   string  `json:"shape"`
+	F       float64 `json:"f"`      // mm²
+	Pi      float64 `json:"pi"`     // mm
+	Dpr     float64 `json:"dpr"`    // mm
+	Delta   float64 `json:"delta"`  // mm coating thickness
+	Lining  int     `json:"lining"` // 1 box 2 contour 3 round
+	AreaM2  float64 `json:"areaM2"`
+	// AkzAreaM2 — площадь окраски антикоррозионной защиты (полный периметр
+	// конструкции): огнезащиту считают по нагреваемым сторонам, а АКЗ и
+	// финишное покрытие — по всей поверхности. В легаси-спецификации это две
+	// отдельные колонки («площадь покрытия огнезащиты» и «площадь покрытия АКЗ»).
+	AkzAreaM2 float64 `json:"akzAreaM2,omitempty"`
 	Volume    float64 `json:"volume"`
 	Exclusion string  `json:"exclusion,omitempty"`
 	Coat      string  `json:"coat"`

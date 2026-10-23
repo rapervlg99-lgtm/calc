@@ -38,13 +38,18 @@ func TestXlsxReportStructure(t *testing.T) {
 	st := testStore(t)
 	engine := calc.New(st)
 
+	// балка с обогревом только сверху: площади огнезащиты и АКЗ различаются,
+	// как в легаси-отчёте, поэтому видно, что материалы делятся по разным площадям
+	taikorEl := element("taikor", "2", 90, true, true, false)
+	taikorEl.Sides = models.HeatedSides{Top: true}
+
 	resp, err := engine.Calculate(models.CalcRequest{
 		ObjectName: "Склад", Address: "Рязань, ул. Дмитрова, 56", Consent: true, FrDurability: "1",
 		Groups: []models.GroupInput{{
 			Title: "Группа элементов 1", Quantity: 1,
 			Elements: []models.ElementInput{
 				element("ozm", "1", 60, false, false, true),
-				element("taikor", "2", 90, true, true, false),
+				taikorEl,
 				element("akz", "1.5", 0, true, true, false),
 			},
 		}},
@@ -165,6 +170,51 @@ func TestXlsxReportStructure(t *testing.T) {
 	}
 	if !foundFit {
 		t.Fatal("в шапке TAIKOR-листа нет названия состава")
+	}
+
+	// Две площади: огнезащита — по нагреваемым сторонам, АКЗ — по всей
+	// поверхности. АКЗ-материалы и финиш считаются по площади АКЗ.
+	foundFire, foundAkz := false, false
+	for r := 1; r <= 25; r++ {
+		for c := 1; c <= 12; c++ {
+			name, _ := excelize.ColumnNumberToName(c)
+			v, _ := f.GetCellValue(taikor, name+itoa(r))
+			if strings.HasPrefix(v, "Площадь покрытия огнезащиты") {
+				foundFire = true
+			}
+			if strings.HasPrefix(v, "Площадь покрытия АКЗ") {
+				foundAkz = true
+			}
+		}
+	}
+	if !foundFire || !foundAkz {
+		t.Fatalf("на листе TAIKOR должны быть две площади (огнезащита=%v акз=%v)", foundFire, foundAkz)
+	}
+	// формулы: состав огнезащиты считается по площади огнезащиты, грунт и финиш —
+	// по площади АКЗ, то есть первая ссылка в ROUND у них разная
+	areaLetters := map[string]bool{}
+	for r := 1; r <= len(rows)+2; r++ {
+		for c := 1; c <= width; c++ {
+			name, _ := excelize.ColumnNumberToName(c)
+			form, _ := f.GetCellFormula(taikor, name+itoa(r))
+			if strings.HasPrefix(form, "ROUND(") && strings.Contains(form, "*") {
+				if i := strings.Index(form, "*"); i > 6 {
+					areaLetters[form[6:i]] = true
+				}
+			}
+		}
+	}
+	if len(areaLetters) < 2 {
+		t.Fatalf("ожидали формулы с двумя разными площадями, получили %v", areaLetters)
+	}
+
+	// шапка листа: картинка с логотипом и QR-кодом
+	pics, err := f.GetPictures(ozm, "A1")
+	if err != nil {
+		t.Fatalf("pictures: %v", err)
+	}
+	if len(pics) == 0 || len(pics[0].File) == 0 {
+		t.Fatal("в спецификации нет картинки шапки")
 	}
 }
 

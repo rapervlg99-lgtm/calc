@@ -25,9 +25,9 @@ const (
 	kindAkz    = "akz"
 	kindOzm    = "ozm"
 
-	rowPriceTitle = 7  // строка «Стоимость единицы материала:»
-	priceStart    = 8  // первая строка блока цен
-	headerLevels  = 3  // уровней в шапке таблицы
+	rowPriceTitle = 7 // строка «Стоимость единицы материала:»
+	priceStart    = 8 // первая строка блока цен
+	headerLevels  = 3 // уровней в шапке таблицы
 )
 
 // rateCell — расход материала по элементу: ТСП (толщина сухого слоя, мм; для плит
@@ -47,6 +47,9 @@ type reportRow struct {
 	Limit   string
 	Lining  string
 	Area    float64
+	// AkzArea — площадь окраски АКЗ (полная поверхность); на листе TAIKOR
+	// показывается отдельной колонкой, АКЗ-материалы считаются по ней.
+	AkzArea float64
 	Rates   map[string]rateCell
 	Coef    float64
 	Beton   bool
@@ -112,7 +115,7 @@ func (s *Service) buildSheets(resp models.CalcResponse) []sheetData {
 
 			row := reportRow{
 				Group: group, Title: elementTitle(el, ei), Profile: s.profileLabel(el),
-				Length: el.LengthM, Ptm: res.Dpr, Area: res.AreaM2,
+				Length: el.LengthM, Ptm: res.Dpr, Area: res.AreaM2, AkzArea: res.AkzAreaM2,
 				Rates: map[string]rateCell{},
 			}
 			if el.HtLevel > 0 {
@@ -521,7 +524,8 @@ func columnsFor(sh sheetData, s *Service) []reportColumn {
 	default:
 		cols = append(cols,
 			reportColumn{key: "r", leaf: "Требуемый предел огнестойкости", width: 14},
-			reportColumn{key: "area", leaf: "Площадь покрытия, м²", width: 15.3},
+			reportColumn{key: "area", leaf: "Площадь покрытия огнезащиты, м²", width: 15.3},
+			reportColumn{key: "akzArea", leaf: "Площадь покрытия АКЗ, м²", width: 14},
 		)
 		var akz, fire, finish []string
 		for _, id := range sh.Mats {
@@ -572,6 +576,20 @@ func (s *Service) writeSheet(f *excelize.File, sh sheetData, resp models.CalcRes
 	cols := columnsFor(sh, s)
 	if len(sh.Mats) == 0 || len(cols) == 0 {
 		return nil
+	}
+
+	// шапка листа: QR-код и логотип «ТЕХНОНИКОЛЬ · Проектный сервис» одной
+	// картинкой, как в легаси-отчёте (картинка встроена в бинарник)
+	if len(reportHeaderPNG) > 0 {
+		printObj := true
+		_ = f.AddPictureFromBytes(sh.Name, "A1", &excelize.Picture{
+			Extension: ".png",
+			File:      reportHeaderPNG,
+			Format: &excelize.GraphicOptions{
+				AltText: "ТЕХНОНИКОЛЬ · Проектный сервис", PrintObject: &printObj,
+				ScaleX: 0.75, ScaleY: 0.75, OffsetX: 8, OffsetY: 6,
+			},
+		})
 	}
 
 	// ширины колонок
@@ -823,7 +841,7 @@ func columnFormat(key, kind string) (string, string) {
 		return "#,##0.##", "right"
 	case key == "ptm":
 		return "#,##0.00", "right"
-	case key == "area" || strings.HasPrefix(key, "sarse:"):
+	case key == "area" || key == "akzArea" || strings.HasPrefix(key, "sarse:"):
 		return "#,##0.00", "right"
 	case strings.HasPrefix(key, "tsp:"):
 		return "#,##0.0#", "right"
@@ -852,6 +870,17 @@ func (s *Service) writeRow(f *excelize.File, sh sheetData, cols []reportColumn, 
 	}
 	coefLetter := at["coef"]
 	areaLetter := at["area"]
+	// АКЗ и финишное покрытие считаются по полной площади окраски (колонка
+	// «Площадь покрытия АКЗ»), огнезащитный состав — по площади нагреваемых
+	// сторон: в легаси-спецификации это две колонки.
+	areaFor := func(id string) string {
+		if sh.Kind == kindTaikor && (id == "T150p" || id == "T425t") {
+			if l, ok := at["akzArea"]; ok && l != "" {
+				return l
+			}
+		}
+		return areaLetter
+	}
 	put := func(key string, v any) {
 		if letter, ok := at[key]; ok {
 			_ = f.SetCellValue(sh.Name, cell(letter, row), v)
@@ -865,6 +894,7 @@ func (s *Service) writeRow(f *excelize.File, sh sheetData, cols []reportColumn, 
 	put("r", r.Limit)
 	put("lining", r.Lining)
 	put("area", r.Area)
+	put("akzArea", r.AkzArea)
 
 	for id, rate := range r.Rates {
 		if _, ok := at["tsp:"+id]; ok {
@@ -916,9 +946,10 @@ func (s *Service) writeRow(f *excelize.File, sh sheetData, cols []reportColumn, 
 			}
 		default:
 			rateLetter := at["rate:"+id]
-			if areaLetter != "" && rateLetter != "" {
+			base := areaFor(id)
+			if base != "" && rateLetter != "" {
 				_ = f.SetCellFormula(sh.Name, cell(sumLetter, row),
-					fmt.Sprintf("ROUND(%s%d*%s%d,2)", areaLetter, row, rateLetter, row))
+					fmt.Sprintf("ROUND(%s%d*%s%d,2)", base, row, rateLetter, row))
 			}
 		}
 
