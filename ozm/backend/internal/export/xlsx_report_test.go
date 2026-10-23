@@ -264,8 +264,13 @@ func TestPdfReportStructure(t *testing.T) {
 		t.Fatalf("подозрительно маленький PDF: %d байт", len(data))
 	}
 	pages := bytes.Count(data, []byte("/Type /Page"))
-	if pages < 7 {
-		t.Fatalf("ожидали титул, содержание, 5 разделов и литературу, страниц: %d", pages)
+	// титул, содержание, пять разделов, приложения A (схемы), Б (сертификаты)
+	// и В (техлисты), список литературы
+	if pages < 24 {
+		t.Fatalf("ожидали титул, содержание, разделы и приложения, страниц: %d", pages)
+	}
+	if len(data) < 2*1024*1024 {
+		t.Fatalf("в отчёте должны быть встроенные сканы приложений, размер: %d байт", len(data))
 	}
 	if out := os.Getenv("OZM_PDF_OUT"); out != "" {
 		if err := os.WriteFile(out, data, 0o644); err != nil {

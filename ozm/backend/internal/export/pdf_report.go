@@ -109,6 +109,7 @@ func (s *Service) buildPDF(resp models.CalcResponse, contents map[string]int) ([
 	b.section3()
 	b.section4()
 	b.section5()
+	b.appendices()
 	b.literature()
 
 	if contents == nil {
@@ -337,6 +338,9 @@ func (b *pdfBuilder) contents(pages map[string]int) {
 		{"s3", "3. Определение толщины огнезащитной изоляции"},
 		{"s4", "4. Расчёт площадей защищаемых элементов и объема защитных материалов"},
 		{"s5", "5. Итоговая спецификация материалов"},
+		{"appA", "Приложение A. Устройство огнезащиты конструкции"},
+		{"appB", "Приложение Б. Сертификаты пожарной безопасности"},
+		{"appV", "Приложение В. Технические листы"},
 		{"lit", "Список используемой литературы"},
 	}
 	pdf.SetFont("tn", "", 9.5)

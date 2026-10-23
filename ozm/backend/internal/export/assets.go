@@ -1,6 +1,6 @@
 package export
 
-import _ "embed"
+import "embed"
 
 // Встроенные ресурсы отчётов: шапка (QR + логотип), отдельные логотип и QR для
 // PDF, шрифт с кириллицей (DejaVu Sans, свободная лицензия — см.
@@ -21,6 +21,13 @@ var dejaVuSans []byte
 
 //go:embed assets/DejaVuSans-Bold.ttf
 var dejaVuSansBold []byte
+
+// appendixFS — сканы приложений (узлы устройства огнезащиты и технические
+// листы). Лежат отдельными файлами: подпись в отчёте формируется по манифесту
+// в pdf_appendix.go.
+//
+//go:embed assets/appendix/*
+var appendixFS embed.FS
 
 // reportYear — текущий год для титульного листа (подменяется в тестах).
 var reportYear = func() int { return yearNow() }
