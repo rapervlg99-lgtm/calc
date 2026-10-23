@@ -296,7 +296,7 @@ func (d *docxDoc) tableXML(widths []float64, rows [][]docxCell, borders bool) {
 				b.WriteString(inlineImage(rid, c.ImageName,
 					int(c.ImageW*emuPerMM), int(c.ImageH*emuPerMM), c.Align))
 			} else {
-				b.WriteString(paraXML(c.Align, 1, 1, runs, ""))
+				b.WriteString(paraXML(c.Align, 0, 0, runs, ""))
 			}
 			b.WriteString("</w:tc>")
 		}
@@ -522,7 +522,7 @@ const docxStyles = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
     <w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/>
     <w:sz w:val="20"/><w:szCs w:val="20"/>
   </w:rPr></w:rPrDefault>
-  <w:pPrDefault><w:pPr><w:spacing w:after="80" w:line="264" w:lineRule="auto"/></w:pPr></w:pPrDefault>
+  <w:pPrDefault><w:pPr><w:spacing w:after="30" w:line="228" w:lineRule="auto"/></w:pPr></w:pPrDefault>
   </w:docDefaults>
   <w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/></w:style>
   <w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/>
