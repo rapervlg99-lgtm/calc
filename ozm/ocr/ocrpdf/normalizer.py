@@ -72,7 +72,11 @@ _LOST_COMMA_RE = re.compile(r"^([+-]?\d{2,})[\s\u00a0\u2009]+(\d{1,2})$")
 # уже есть, порядок цифр не меняется — склейка ничего не выдумывает, но ячейка
 # всё равно идёт на проверку.
 _SPLIT_DECIMAL_RE = re.compile(
-    r"^([+-]?\d+[.,]\d*)[\s\u00a0\u2009]+(\d{1,3})$")
+    r"^([+-]?\d+[.,]\d*)[^\S\n]+(\d{1,3})$")
+# Число и отдельная цифра на ВТОРОЙ строке ячейки («1,00» и «4» под ним): на
+# чертеже это обрывок соседней строки или одиночный глиф, а не дробная часть.
+# Склеивать нельзя: получается «1,004» — значение, которого в документе нет.
+_MULTILINE_NUMBER_RE = re.compile(r"^([+-]?\d+(?:[.,]\d+)?)[^\S\n]*\n\s*(\d{1,3})$")
 # Полноширинные цифры и знаки (U+FF10…) от RapidOCR: «５» вместо «5».
 _FULLWIDTH = {0xFF10 + i: str(i) for i in range(10)}
 _FULLWIDTH.update({0xFF0C: ",", 0xFF0E: ".", 0xFF0D: "-", 0xFF0B: "+"})
@@ -1234,6 +1238,13 @@ def normalize_cell(cell: Cell, role: str) -> Cell:
             if lost:
                 cell.notes.append("пробел вместо десятичной запятой; raw=%r" % cell.text)
                 cell.text = "%s,%s" % (lost.group(1), lost.group(2))
+                cell.requires_review = True
+            multiline = _MULTILINE_NUMBER_RE.fullmatch(cell.text.strip())
+            if multiline:
+                cell.notes.append(
+                    "вторая строка в числовой ячейке (похоже на обрывок); "
+                    "оставлено значение первой строки; raw=%r" % cell.text)
+                cell.text = multiline.group(1)
                 cell.requires_review = True
             split = _SPLIT_DECIMAL_RE.fullmatch(cell.text.strip())
             if split:

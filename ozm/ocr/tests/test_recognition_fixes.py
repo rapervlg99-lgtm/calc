@@ -103,6 +103,22 @@ def test_split_decimal_is_glued_and_flagged():
     assert cell.text == "0.14 5" and cell.normalized_value is None
 
 
+def test_second_line_digit_does_not_extend_decimals():
+    """«1,00» и отдельная «4» второй строкой — это обрывок в ячейке, а не
+    дробная часть: на KD.163 «Итого» читалось как 1,004 вместо 1,00."""
+    cell = normalize_cell(Cell(row=11, col=8, text="1,00\n4", source="mixed"), "total_mass")
+    assert cell.text == "1,00"
+    assert cell.normalized_value == 1.0
+    assert cell.requires_review is True
+    assert any("вторая строка" in n for n in cell.notes)
+    # три строки и число на второй строке — уже не наш случай, не угадываем
+    cell = normalize_cell(Cell(row=12, col=8, text="7,50\n2", source="mixed"), "total_mass")
+    assert cell.normalized_value == 7.5
+    # пробел ВНУТРИ строки по-прежнему склеивается как дробная часть
+    cell = normalize_cell(Cell(row=13, col=8, text="0,37 2", source="ocr"), "total_mass")
+    assert cell.normalized_value == 0.372
+
+
 def test_numeric_column_letters_become_digits_but_text_columns_keep_them():
     """«0,В2» в колонке масс — это 0,82 (буква там невозможна), а «В25» в
     текстовой колонке — класс бетона, его трогать нельзя."""

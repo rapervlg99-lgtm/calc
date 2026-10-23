@@ -313,6 +313,11 @@ def _resolve_engine(words: list[TextLine]) -> str:
     return "rapidocr"
 
 
+# Число (в том числе с запятой/точкой и пробелами тысяч) — для решения,
+# надёжна ли ячейка, прочитанная из текстового слоя.
+_NUMERIC_TEXT = re.compile(r"^[+-]?\d{1,3}(?:[ \u00a0\u2009]\d{3})*(?:[.,]\d+)?$")
+
+
 @dataclass
 class CellReader:
     """Читает ячейки одной страницы из всех доступных источников."""
@@ -547,10 +552,15 @@ class CellReader:
             cell.requires_review = True
             cell.notes.append("low OCR confidence")
         if "?" in text or unreadable:
-            cell.requires_review = True
-            cell.notes.append(
-                "нераспознанных элементов: %d (возможен символ типа профиля)"
-                % max(unreadable, text.count("?")))
+            # Глиф не лёг в шаблон — но если значение пришло из текстового слоя
+            # и разбирается как число, цифры надёжны: помечать нечего. Иначе
+            # каждая итоговая ячейка с пропущенным знаком уходила на проверку.
+            numeric_text = bool(_NUMERIC_TEXT.fullmatch(text.strip())) if text.strip() else False
+            if source != "text_layer" or not numeric_text or "?" in text:
+                cell.requires_review = True
+                cell.notes.append(
+                    "нераспознанных элементов: %d (возможен символ типа профиля)"
+                    % max(unreadable, text.count("?")))
         if looks_broken(text):
             cell.requires_review = True
             cell.notes.append("text layer encoding not repaired")
