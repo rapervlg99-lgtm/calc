@@ -25,7 +25,7 @@ from dataclasses import asdict
 
 from .pdfbackend import fitz
 from .models import Table, to_jsonable
-from .structure import Column, LogicalRow, column_key, standards_of
+from .structure import Column, LogicalRow, clean_symbol_junk, column_key, standards_of
 
 LOW_CONF_FILL = "FFF2CC"      # ячейки на ручную проверку
 FAILED_FILL = "FFC7CE"        # строки с непройденной арифметикой
@@ -89,6 +89,9 @@ def table_to_dict(table: Table, cols: list[Column], rows: list[LogicalRow],
         grade, grade_std = standards_of(grade_cell)
         group_cell = row.cells.get("profile_group")
         group, group_std = standards_of(group_cell, bare=True)
+        # Обломки штриховых значков в наименовании («… ыьгм») убираем в готовом
+        # имени: чистка текста ячейки до канонизации сбивала подбор группы.
+        group = clean_symbol_junk(group)
         elements = {}
         for key, cell in row.cells.items():
             if key.startswith("element:"):

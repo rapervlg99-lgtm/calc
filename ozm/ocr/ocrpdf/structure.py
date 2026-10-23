@@ -184,6 +184,11 @@ _JUNK_LONE = set("ющшжыьъэяцчЮЩШЖЫЬЪЭЯЦЧ")
 _LONE_LATIN = re.compile(r"^[A-Za-z]$")
 
 
+# Сочетание «ы» и знаков подряд в русском слове невозможно: «ыьгм» — это
+# прочитанный штриховой значок гнутого профиля, а не слово.
+_SIGN_CLUSTER = re.compile(r"[ыьъЫЬЪ][ыьъЫЬЪ]")
+
+
 def _is_junk_token(tok: str) -> bool:
     """Токен — обломок штрихового значка, а не слово."""
     if any(ch in _SYMBOL_JUNK_CHARS for ch in tok):
@@ -191,7 +196,12 @@ def _is_junk_token(tok: str) -> bool:
     core = tok.strip(".,;:()[]{}«»\"'`-–—")
     if not core:
         return False
-    return len(core) == 1 and (core in _JUNK_LONE or bool(_LONE_LATIN.match(core)))
+    if len(core) == 1 and (core in _JUNK_LONE or bool(_LONE_LATIN.match(core))):
+        return True
+    # «ыьгм», «ыь», «ъь»: два знака/«ы» подряд в слове не встречаются
+    if _SIGN_CLUSTER.search(core):
+        return True
+    return False
 
 
 def clean_symbol_junk(text: str) -> str:
@@ -223,6 +233,8 @@ def clean_symbol_junk(text: str) -> str:
     out = "".join(kept)
     out = re.sub(r"[ \t]{2,}", " ", out)
     out = re.sub(r"\n[ \t]+", "\n", out)
+    # выпавший токен оставлял пустую строку: в подписи группы она лишняя
+    out = re.sub(r"\n{2,}", "\n", out)
     out = out.strip()
     # подпись состояла только из значков — лучше оставить как было
     return out if any(ch.isalnum() for ch in out) else text
