@@ -103,6 +103,16 @@ def test_split_decimal_is_glued_and_flagged():
     assert cell.text == "0.14 5" and cell.normalized_value is None
 
 
+def test_font_private_use_glyph_is_dropped():
+    """Значок квадратного сечения в графе напечатан кодом шрифта U+E017:
+    «Гн\ue017100х4» — это «Гн □ 100х4», но в интерфейсе код выглядел как «I»."""
+    cell = normalize_cell(Cell(row=47, col=2, text="Гн\ue017100х4 (214-205-0103-0007)",
+                               source="text_layer"), "profile_size")
+    assert "\ue017" not in cell.text
+    assert cell.text.startswith("Гн100")
+    assert any("служебный символ" in n for n in cell.notes)
+
+
 def test_bent_profile_standards_restore_group_name():
     """Гнутые швеллеры и уголки: ГОСТы 8278/8281/19771/19772 раньше не были в
     таблице подсказок, и группа «Швеллеры стальные гнутые» оставалась как её

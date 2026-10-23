@@ -76,7 +76,8 @@ const COAT_BY_LABEL: Record<string, string> = {
 
 /** Strip assortment noise; unify latin/cyrillic lookalikes. */
 export function normalizeMark(mark: string): string {
-  let s = String(mark || '').trim().toUpperCase()
+  // служебные символы шрифта (U+E000–U+F8FF) — значки сечений, не текст
+  let s = String(mark || '').replace(/[\ue000-\uf8ff]/g, '').trim().toUpperCase()
   // drop common prefixes from OCR / raw text
   s = s.replace(/^(ДВУТАВР|ДВУТАВР\.|I|ШВЕЛЛЕР|ШВ\.?|УГОЛОК|УГ\.?|ТРУБА|ТР\.?|ТР\s+|PIPE)\s*/i, '')
   // значки сечения в начале обозначения: «L100×7» у уголка, «□100×100×4» у

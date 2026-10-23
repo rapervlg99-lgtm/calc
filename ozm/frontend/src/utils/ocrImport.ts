@@ -158,7 +158,9 @@ const TRAILING_GLYPH_DESIGNATION_RE =
   /^(?:\d{2,3}[БШКДМBWKDM]\d?|\d{1,3}(?:[.,]\d)?[хx×]\d{1,3}(?:[хx×]\d{1,2}(?:[.,]\d)?)?|\d{1,3}[ПпPp]а?|[tT]\s?\d{1,3}(?:[хx×]\d{1,3})?|RD\d{1,3})$/u
 
 export function cleanMark(size: string | null | undefined): string {
-  let s = String(size || '').trim()
+  // Служебные символы чертёжного шрифта (Private Use Area): значок сечения
+  // «□» в графе напечатан кодом U+E017 и в интерфейсе выглядит как «I».
+  let s = String(size || '').replace(/[\ue000-\uf8ff]/g, '').trim()
   // Префиксы «Гн.» и «Тр.» обозначают вид профиля, но не входят в размер.
   s = s.replace(/^Гн\.?\s*/iu, '')
   s = s.replace(/^Тр\.?\s*(?=\d)/iu, '')

@@ -1138,8 +1138,18 @@ def _canon_profile_group(cell: Cell) -> None:
         cell.requires_review = True
 
 
+# Служебные символы шрифта (Private Use Area, U+E000–U+F8FF): чертёжные шрифты
+# кладут туда значки сечений. В тексте ячейки это невидимый мусор, который
+# ломает и сравнение марок, и показ в интерфейсе: «Гн\ue017100х4» на KD.163 —
+# это «Гн □ 100х4» (квадратная гнутая труба).
+_PUA_RE = re.compile(r"[\ue000-\uf8ff]")
+
+
 def normalize_cell(cell: Cell, role: str) -> Cell:
     """Заполняет `normalized_value` / `value_kind` в соответствии с ролью колонки."""
+    if cell.text and _PUA_RE.search(cell.text):
+        cell.notes.append("служебный символ шрифта убран; raw=%r" % cell.text)
+        cell.text = _PUA_RE.sub("", cell.text)
     raw = cell.text
     if not raw.strip():
         cell.value_kind = "empty"
