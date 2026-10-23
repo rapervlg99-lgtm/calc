@@ -103,6 +103,27 @@ def test_split_decimal_is_glued_and_flagged():
     assert cell.text == "0.14 5" and cell.normalized_value is None
 
 
+def test_bent_profile_standards_restore_group_name():
+    """Гнутые швеллеры и уголки: ГОСТы 8278/8281/19771/19772 раньше не были в
+    таблице подсказок, и группа «Швеллеры стальные гнутые» оставалась как её
+    прочитал OCR (с обломком значка в конце)."""
+    from ocrpdf.normalizer import group_by_standard
+
+    def name(std):
+        hint = group_by_standard([std])
+        return hint[0] if hint else None
+
+    assert name("ГОСТ 8278-83") == "Швеллеры стальные гнутые равнополочные"
+    assert name("ГОСТ 8281-80") == "Швеллеры стальные гнутые неравнополочные"
+    assert name("ГОСТ 19771-93") == "Уголки стальные гнутые равнополочные"
+    assert name("ГОСТ 19772-93") == "Уголки стальные гнутые неравнополочные"
+    # горячекатаные не путаются с гнутыми
+    assert name("ГОСТ 8240-97") == "Швеллеры стальные горячекатаные"
+    assert name("ГОСТ 8509-93") == "Уголки стальные горячекатаные равнополочные"
+    # два разных вида профиля в одной ячейке — подсказки нет
+    assert group_by_standard(["ГОСТ 8278-83", "ГОСТ 8509-93"]) is None
+
+
 def test_symbol_junk_is_stripped_from_header_titles():
     """Штриховые значки сечений OCR читает как обрывки букв: на KD.163 подписи
     граф приходили как «Ш? я Связи вертикальные», «ю □ Рамы и опоры»,
