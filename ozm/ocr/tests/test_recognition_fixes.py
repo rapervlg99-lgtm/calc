@@ -103,6 +103,25 @@ def test_split_decimal_is_glued_and_flagged():
     assert cell.text == "0.14 5" and cell.normalized_value is None
 
 
+def test_symbol_junk_is_stripped_from_header_titles():
+    """Штриховые значки сечений OCR читает как обрывки букв: на KD.163 подписи
+    граф приходили как «Ш? я Связи вертикальные», «ю □ Рамы и опоры»,
+    «№? щ Монорельсы». Значения это не портило, но подписи были нечитаемы."""
+    from ocrpdf.structure import clean_symbol_junk
+
+    assert clean_symbol_junk("Ш? я Связи вертикальные") == "Связи вертикальные"
+    assert clean_symbol_junk("ю □ Рамы и опоры") == "Рамы и опоры"
+    assert clean_symbol_junk("№? щ Монорельсы") == "Монорельсы"
+    assert clean_symbol_junk("Швеллеры □Бt стальные гнутые") == "Швеллеры стальные гнутые"
+    # настоящие подписи не меняются: единицы, номера граф, примечания с переносами
+    assert clean_symbol_junk("Масса, т (начало)") == "Масса, т (начало)"
+    assert clean_symbol_junk("№ п.п.") == "№ п.п."
+    note = "Примечания:\n1. Масса подлежит уточнению.\n2. Сталь по ГОСТ 27772-2015."
+    assert clean_symbol_junk(note) == note
+    # подпись только из значков остаётся как есть: пустая подпись хуже мусора
+    assert clean_symbol_junk("□ ■") == "□ ■"
+
+
 def test_second_line_digit_does_not_extend_decimals():
     """«1,00» и отдельная «4» второй строкой — это обрывок в ячейке, а не
     дробная часть: на KD.163 «Итого» читалось как 1,004 вместо 1,00."""

@@ -1065,7 +1065,13 @@ def _canon_profile_group(cell: Cell) -> None:
         cell.requires_review = True
     if row_marker(cell.text):
         return
-    from .structure import canonical_profile_group
+    from .structure import canonical_profile_group, clean_symbol_junk
+    cleaned = clean_symbol_junk(cell.text)
+    if cleaned != cell.text:
+        # «Швеллеры □Бt стальные гнутые» -> «Швеллеры стальные гнутые»
+        if "обломки значков" not in " ".join(cell.notes):
+            cell.notes.append("из наименования убраны обломки значков; raw=%r" % cell.text)
+        cell.text = cleaned
     canon, ratio = canonical_profile_group(cell.text)
     if not canon and getattr(cell, "alt_text", ""):
         # основной движок дал кашу («Теуеа_КеggраТНаn»), а второй — латинскую

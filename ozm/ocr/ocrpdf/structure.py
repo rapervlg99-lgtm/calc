@@ -172,6 +172,62 @@ def skeleton(text: str) -> str:
     return "".join(c for c in t if c.isalnum())
 
 
+# Штриховые значки сечений в шапке («□», «[», «I», «L», «Ш») OCR читает как
+# обрывки букв: «Связи вертикальные» -> «Ш? я Связи вертикальные», «Рамы и
+# опоры» -> «ю □ Рамы и опоры», «Монорельсы» -> «№? щ Монорельсы». В подписи
+# графы они не нужны (тип профиля известен из наименования группы), поэтому
+# токены со значками и одинокие «штриховые» буквы из подписи убираем.
+# Значения ячеек это не трогает — только подписи.
+_SYMBOL_JUNK_CHARS = set("?□■▪▫◻◼◾◽◢◣◤◥○●◇◆△▽▲▼※☐☑☒❑❏❐▭▬▰▱←↑→↓↔↕")
+# Одиночные буквы, которые читаются из штрихов значка, а не из слова.
+_JUNK_LONE = set("ющшжыьъэяцчЮЩШЖЫЬЪЭЯЦЧ")
+_LONE_LATIN = re.compile(r"^[A-Za-z]$")
+
+
+def _is_junk_token(tok: str) -> bool:
+    """Токен — обломок штрихового значка, а не слово."""
+    if any(ch in _SYMBOL_JUNK_CHARS for ch in tok):
+        return True
+    core = tok.strip(".,;:()[]{}«»\"'`-–—")
+    if not core:
+        return False
+    return len(core) == 1 and (core in _JUNK_LONE or bool(_LONE_LATIN.match(core)))
+
+
+def clean_symbol_junk(text: str) -> str:
+    """Убирает обломки штриховых значков из подписи графы или наименования.
+
+    «Ш? я Связи вертикальные» -> «Связи вертикальные»;
+    «ю □ Рамы и опоры» -> «Рамы и опоры»;
+    «Швеллеры □Бt стальные гнутые» -> «Швеллеры стальные гнутые».
+
+    Переводы строк и отступы сохраняются: подпись группы — многострочная, и её
+    форматирование видно пользователю. Если обломков нет, текст возвращается
+    байт в байт (иначе примечания к таблице теряли переводы строк).
+    """
+    parts = re.split(r"(\s+)", text)
+    kept: list[str] = []
+    changed = False
+    for part in parts:
+        if not part:
+            continue
+        if part.isspace() or part in kept and False:
+            kept.append(part)
+            continue
+        if _is_junk_token(part):
+            changed = True
+            continue
+        kept.append(part)
+    if not changed:
+        return text
+    out = "".join(kept)
+    out = re.sub(r"[ \t]{2,}", " ", out)
+    out = re.sub(r"\n[ \t]+", "\n", out)
+    out = out.strip()
+    # подпись состояла только из значков — лучше оставить как было
+    return out if any(ch.isalnum() for ch in out) else text
+
+
 # Чертёжный курсив (ISOCPEUR Italic) растровый OCR читает системно неверно:
 # «Прокат горячекатаный» -> «nроkаm 20рАНеКОmаНblU», «Двутавры стальные» ->
 # «Аbуmаbрbl сМα/bНblе», «Всего профиля» -> «Все20 nроΦu/9». Подмены устойчивые,
@@ -299,6 +355,7 @@ def element_name(raw: str) -> str:
     кириллицей («nodcmponunbuble фермы» -> «подстропипвиые фермы» хуже, чем
     словарное «Подстропильные фермы», но лучше исходной каши); 4) иначе как есть.
     """
+    raw = clean_symbol_junk(raw)
     text = _dehyphenate(raw.replace("\n", " "))
     if not text:
         return ""
@@ -593,7 +650,7 @@ def assign_roles(grid: dict[tuple[int, int], Cell], header_rows: list[int],
                 if cell.row != r:
                     continue
                 parts.append(cell.text.replace("\n", " "))
-        titles.append(" ".join(parts).strip())
+        titles.append(clean_symbol_junk(" ".join(parts).strip()))
 
     # Групповая ячейка «Масса металла по элементам конструкции, т» задаёт
     # диапазон колонок с массами по элементам.
