@@ -131,7 +131,10 @@ node backend/scripts/sync-calclab-sortament.mjs D:\dev\calclab.pro --write
 
 `backend/internal/calc/testdata/golden/*.json` — расширять матрицей семья×coat×method×R.
 
-## Выгрузка спецификации
+## Выгрузки
 
 Excel-спецификация по системам (листы TAIKOR / АКЗ / ТЕХНО ОЗМ+ОЗБ, блок цен,
 формулы расхода и стоимости, ИТОГО) — см. `docs/report_xlsx.md`.
+
+PDF-отчёт «Расчет огнезащиты» (титул, содержание, пять разделов с таблицами 1–9,
+список литературы) — см. `docs/report_pdf.md`.

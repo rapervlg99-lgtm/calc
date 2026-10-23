@@ -229,3 +229,48 @@ func itoa(v int) string {
 	}
 	return string(b)
 }
+
+// PDF-отчёт: титул, содержание, разделы, таблицы и список литературы — как в
+// легаси-документе. Проверяем структуру файла и сохраняем образец по запросу.
+func TestPdfReportStructure(t *testing.T) {
+	st := testStore(t)
+	engine := calc.New(st)
+
+	taikorEl := element("taikor", "2", 90, true, true, false)
+	taikorEl.Sides = models.HeatedSides{Top: true}
+	resp, err := engine.Calculate(models.CalcRequest{
+		ObjectName: "Склад", Address: "Рязань, ул. Дмитрова, 56", Consent: true, FrDurability: "1",
+		Groups: []models.GroupInput{{
+			Title: "Группа элементов 1", Quantity: 1,
+			Elements: []models.ElementInput{
+				element("ozm", "1", 60, false, false, true),
+				taikorEl,
+				element("akz", "1.5", 0, true, true, false),
+			},
+		}},
+		Beton: &models.BetonInput{AreaM2: 40, HtLevel: 180},
+	})
+	if err != nil {
+		t.Fatalf("расчёт: %v", err)
+	}
+	data, err := export.New(st).PDF(resp)
+	if err != nil {
+		t.Fatalf("pdf: %v", err)
+	}
+	if !bytes.HasPrefix(data, []byte("%PDF-")) {
+		t.Fatal("не PDF")
+	}
+	if len(data) < 50*1024 {
+		t.Fatalf("подозрительно маленький PDF: %d байт", len(data))
+	}
+	pages := bytes.Count(data, []byte("/Type /Page"))
+	if pages < 7 {
+		t.Fatalf("ожидали титул, содержание, 5 разделов и литературу, страниц: %d", pages)
+	}
+	if out := os.Getenv("OZM_PDF_OUT"); out != "" {
+		if err := os.WriteFile(out, data, 0o644); err != nil {
+			t.Fatalf("записать пример pdf: %v", err)
+		}
+	}
+	t.Logf("страниц: %d, размер: %.0f КБ", pages, float64(len(data))/1024)
+}

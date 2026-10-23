@@ -187,6 +187,9 @@ type ElementResult struct {
 	// финишное покрытие — по всей поверхности. В легаси-спецификации это две
 	// отдельные колонки («площадь покрытия огнезащиты» и «площадь покрытия АКЗ»).
 	AkzAreaM2 float64 `json:"akzAreaM2,omitempty"`
+	// FactR — фактический предел огнестойкости элемента, мин (для отчёта:
+	// «фактический» рядом с требуемым). У покрытий TAIKOR не считается.
+	FactR     float64 `json:"factR,omitempty"`
 	Volume    float64 `json:"volume"`
 	Exclusion string  `json:"exclusion,omitempty"`
 	Coat      string  `json:"coat"`

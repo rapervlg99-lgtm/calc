@@ -217,6 +217,7 @@ func (e *Engine) calcElement(groupID, elID string, el models.ElementInput, group
 	if coatN <= 1 {
 		delta, ok, rFact := lookupT500(e.cfg.T500, dpr, el.HtLevel)
 		er.Delta = delta
+		er.FactR = rFact
 		if !ok {
 			er.Exclusion = fmt.Sprintf("недостижимый предел огнестойкости R%.0f при δпр=%.1f (Rфакт≈%.0f)", el.HtLevel, dpr, rFact)
 			return er, lines, trace
