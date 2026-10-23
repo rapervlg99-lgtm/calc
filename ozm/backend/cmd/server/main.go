@@ -84,6 +84,7 @@ func main() {
 	}).WithPersistence(api.Persistence{
 		Calculations: pgstore.NewCalculationStore(pool.Pool),
 		Exports:      pgstore.NewExportStore(pool.Pool),
+		Shares:       pgstore.NewShareStore(pool.Pool),
 		Pool:         bgpersist.New(8),
 	})
 

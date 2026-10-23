@@ -33,3 +33,16 @@ Persisted response JSON.
 Body: `{ "calcId": "<uuid>" }` → file download.
 
 **Redesign must not change these shapes.** Additive fields only via versioned agreement.
+
+## Ссылки обмена расчётами
+
+| Метод | Путь | Тело | Ответ |
+|---|---|---|---|
+| POST | `/api/v1/share` | `{"payload": {…}}` | `{"token": "n…"}` |
+| GET | `/api/v1/share/{token}` | — | `{"token", "payload", "updatedAt"}` |
+| PUT | `/api/v1/share/{token}` | `{"payload": {…}}` | `{"token"}` |
+
+Токен — «n» + миллисекунды (13 цифр), при коллизии — с трёхзначным хвостом.
+`payload` — состояние калькулятора (объект, адрес, конструкции, бетон), сервер
+хранит его как есть; размер ограничен 256 КБ (413 при превышении).
+Ошибки: 400 (битый токен/тело), 404 (нет ссылки), 503 (нет БД).

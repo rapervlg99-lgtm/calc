@@ -34,3 +34,30 @@ export async function exportFile(format: 'pdf' | 'xlsx' | 'docx', calcId: string
   const { data } = await api.post(`/export/${format}`, { calcId }, { responseType: 'blob' })
   return data
 }
+
+// ---------- ссылки обмена расчётами ----------
+
+export type SharePayload = Record<string, unknown>
+
+export interface ShareData {
+  token: string
+  payload?: SharePayload
+  updatedAt?: string
+}
+
+/** Создаёт ссылку и возвращает её токен. */
+export async function createShare(payload: SharePayload): Promise<ShareData> {
+  const { data } = await api.post<ShareData>('/share', { payload })
+  return data
+}
+
+/** Читает состояние расчёта по токену. */
+export async function loadShare(token: string): Promise<ShareData> {
+  const { data } = await api.get<ShareData>(`/share/${token}`)
+  return data
+}
+
+/** Сохраняет правки в существующую ссылку. */
+export async function updateShare(token: string, payload: SharePayload): Promise<void> {
+  await api.put(`/share/${token}`, { payload })
+}

@@ -31,7 +31,9 @@ import (
 type Persistence struct {
 	Calculations storage.CalculationStore
 	Exports      storage.ExportStore
-	Pool         *bgpersist.Pool
+	// Shares — ссылки для обмена расчётами (?n…).
+	Shares storage.ShareStore
+	Pool   *bgpersist.Pool
 }
 
 type Options struct {
@@ -95,6 +97,9 @@ func (s *Server) Router() http.Handler {
 		r.Get("/dicts", s.handleDicts)
 		r.Post("/calc", s.handleCalc)
 		r.Get("/calc/{id}", s.handleGetCalc)
+		r.Post("/share", s.handleCreateShare)
+		r.Get("/share/{token}", s.handleGetShare)
+		r.Put("/share/{token}", s.handleUpdateShare)
 		r.Post("/export/pdf", s.handleExport("pdf"))
 		r.Post("/export/xlsx", s.handleExport("xlsx"))
 		r.Post("/export/docx", s.handleExport("docx"))

@@ -3,6 +3,9 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useCalcStore } from '../stores/calc'
 import { usePrefillStore } from '../stores/prefill'
+import { useShareStore } from '../stores/share'
+import { shareTokenFromUrl, urlWithShareToken, urlWithoutShareToken } from '../utils/share'
+import type { SharePayload } from '../utils/api'
 import { mapPrefillPayload } from '../utils/prefillMapper'
 import {
   applyGroupAttrs,
@@ -41,6 +44,7 @@ type FormGroup = {
 
 const store = useCalcStore()
 const prefillStore = usePrefillStore()
+const shareStore = useShareStore()
 const router = useRouter()
 
 /** Вход в распознавание таблиц ИД. Вкладок разделов больше нет: решение
@@ -99,6 +103,7 @@ const stale = ref(false)
 const traceOpen = ref(false)
 const exportMsg = ref('')
 const prefillNote = ref('')
+const shareNote = ref('')
 const dragUid = ref<number | null>(null)
 const dragOverBlock = ref<number | null>(null)
 
@@ -142,9 +147,109 @@ function applyPendingPrefill() {
     : `Предзаполнено ${mapped.elements.length} эл. из распознанной спецификации${groupNote}, марки найдены в справочнике. Заполните объект, отметьте согласие и нажмите «Рассчитать».`) + sheetNote
 }
 
+// ---------- ссылка обмена расчётом ----------
+// Состояние формы целиком уходит в ссылку (?n<timestamp>): при входе ссылка
+// создаётся сразу, дальше правки дописываются в неё с задержкой. Открывший
+// ссылку видит тот же расчёт и может его пересчитать или выгрузить.
+let saveTimer: number | undefined
+let lastJson = ''
+
+function snapshot(): SharePayload {
+  return { v: 1, form: JSON.parse(JSON.stringify(form)) }
+}
+
+/** Приводит элемент из ссылки к форме: недостающее берём из пустого элемента. */
+function normalizeElement(raw: unknown): FormElement {
+  const src = (raw || {}) as Partial<FormElement>
+  const base = emptyElement()
+  return {
+    ...base,
+    ...src,
+    dims: { ...base.dims, ...(src.dims || {}) },
+    sides: { ...base.sides, ...(src.sides || {}) },
+    _uid: nextUid()
+  }
+}
+
+/** Восстанавливает форму из ссылки; false — данные не похожи на расчёт. */
+function hydrate(payload: SharePayload | null): boolean {
+  const src = ((payload as any)?.form ?? payload) as Record<string, any> | null
+  if (!src || typeof src !== 'object') return false
+  form.objectName = String(src.objectName || '')
+  form.address = String(src.address || '')
+  // согласие на обработку данных каждый пользователь даёт сам
+  form.consent = false
+  form.frDurability = String(src.frDurability || '1')
+  form.betonOn = Boolean(src.betonOn)
+  form.betonArea = src.betonArea == null ? null : Number(src.betonArea)
+  form.betonR = String(src.betonR || '180')
+  form.ungrouped = Array.isArray(src.ungrouped) && src.ungrouped.length ? src.ungrouped.map(normalizeElement) : [emptyElement()]
+  form.groups = Array.isArray(src.groups)
+    ? src.groups.map((g: any) => ({
+        title: String(g?.title || ''),
+        quantity: Number(g?.quantity) || 1,
+        groupHt: g?.groupHt ?? '',
+        groupFr: g?.groupFr ?? '',
+        elements: Array.isArray(g?.elements) ? g.elements.map(normalizeElement) : []
+      }))
+    : []
+  return true
+}
+
+/** Записывает токен в адресную строку, не создавая записи в истории. */
+function putTokenToUrl(token: string) {
+  const next = urlWithShareToken(window.location.href, token)
+  if (next !== window.location.href) window.history.replaceState(window.history.state, '', next)
+}
+
+async function initShare() {
+  const token = shareTokenFromUrl(window.location.href)
+  if (token) {
+    const payload = await shareStore.open(token)
+    if (payload && hydrate(payload)) {
+      lastJson = JSON.stringify(snapshot())
+      shareNote.value = ''
+      return
+    }
+    // ссылка битая или устаревшая — начинаем с чистой и создаём новую
+    window.history.replaceState(window.history.state, '', urlWithoutShareToken(window.location.href))
+  }
+  const created = await shareStore.create(snapshot())
+  if (created) {
+    lastJson = JSON.stringify(snapshot())
+    putTokenToUrl(created)
+  } else {
+    shareNote.value = shareStore.error || 'Ссылка для обмена недоступна'
+  }
+}
+
+/** Отложенная запись правок: не дёргаем сервер на каждое нажатие клавиши. */
+function scheduleShareSave() {
+  window.clearTimeout(saveTimer)
+  saveTimer = window.setTimeout(async () => {
+    const payload = snapshot()
+    const json = JSON.stringify(payload)
+    if (json === lastJson) return
+    lastJson = json
+    await shareStore.save(payload)
+    if (shareStore.error) shareNote.value = shareStore.error
+  }, 800)
+}
+
+async function copyShareLink() {
+  const href = shareStore.token ? urlWithShareToken(window.location.href, shareStore.token) : window.location.href
+  try {
+    await navigator.clipboard.writeText(href)
+    shareNote.value = 'Ссылка на расчёт скопирована'
+  } catch {
+    shareNote.value = href
+  }
+}
+
 onMounted(async () => {
   await store.loadDicts()
   applyPendingPrefill()
+  await initShare()
 })
 
 // ---------- справочники ----------
@@ -331,7 +436,14 @@ async function runCalc() {
   if (store.result) stale.value = false
 }
 
-watch(form, markStale, { deep: true })
+watch(
+  form,
+  () => {
+    markStale()
+    if (shareStore.token) scheduleShareSave()
+  },
+  { deep: true }
+)
 
 async function download(fmtKind: 'pdf' | 'xlsx' | 'docx') {
   if (!store.result?.id) return
@@ -383,6 +495,7 @@ const barHint = computed(() => {
   if (store.error) return store.error
   if (touched.value && validation.value.count) return `Не заполнено обязательных полей: ${validation.value.count}`
   if (exportMsg.value) return exportMsg.value
+  if (shareNote.value) return shareNote.value
   if (stale.value) return 'Данные изменены после расчёта — пересчитайте'
   if (result.value) return `Расчёт выполнен · calcId ${result.value.id}`
   if (validation.value.count) return 'Заполните объект и отметьте согласие, чтобы рассчитать'
@@ -576,6 +689,7 @@ const barTitle = computed(() => {
         <div class="calc-bar-hint" :style="{ color: barHintColor }">{{ barHint }}</div>
       </div>
       <div class="calc-grow" />
+      <TnButton v-if="shareStore.token" secondary size="md" icon="copy" @click="copyShareLink">Поделиться</TnButton>
       <div v-if="result?.id" class="calc-bar-exports">
         <TnButton secondary size="md" icon="download" @click="download('xlsx')">Excel</TnButton>
         <TnButton secondary size="md" icon="download" @click="download('pdf')">PDF</TnButton>

@@ -152,3 +152,50 @@ func EnsureJSON(v any) (json.RawMessage, error) {
 	}
 	return b, nil
 }
+
+type ShareStore struct {
+	pool *pgxpool.Pool
+}
+
+func NewShareStore(p *pgxpool.Pool) *ShareStore { return &ShareStore{pool: p} }
+
+// Create вставляет черновик и возвращает токен. Повтор по тому же токену
+// (коллизия) — ошибка unique_violation: вызывающий генерирует новый.
+func (s *ShareStore) Create(ctx context.Context, rec storage.ShareRecord) (string, error) {
+	_, err := s.pool.Exec(ctx, `
+		insert into calc_shares (token, payload) values ($1, $2::jsonb)
+	`, rec.Token, string(rec.Payload))
+	if err != nil {
+		return "", err
+	}
+	return rec.Token, nil
+}
+
+func (s *ShareStore) Update(ctx context.Context, token string, payload json.RawMessage) error {
+	tag, err := s.pool.Exec(ctx, `
+		update calc_shares set payload = $2::jsonb, updated_at = now() where token = $1
+	`, token, string(payload))
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return storage.ErrNotFound
+	}
+	return nil
+}
+
+func (s *ShareStore) GetByToken(ctx context.Context, token string) (storage.ShareRecord, error) {
+	var rec storage.ShareRecord
+	var payload []byte
+	err := s.pool.QueryRow(ctx, `
+		select token, payload, created_at, updated_at from calc_shares where token = $1
+	`, token).Scan(&rec.Token, &payload, &rec.CreatedAt, &rec.UpdatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return rec, storage.ErrNotFound
+	}
+	if err != nil {
+		return rec, err
+	}
+	rec.Payload = json.RawMessage(payload)
+	return rec, nil
+}
